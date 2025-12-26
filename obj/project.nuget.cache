@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "ngAi1jDKwoY=",
+  "dgSpecHash": "bbXz29FynN0=",
   "success": true,
-  "projectFilePath": "/Users/donatolucente/RiderProjects/AsyncronousComunication/AsyncronousComunication.csproj",
+  "projectFilePath": "/Users/donatolucente/Desktop/projects/AspNetCore.MessagingOverQueue/AsyncronousComunication.csproj",
   "expectedPackageFiles": [
     "/Users/donatolucente/.nuget/packages/microsoft.entityframeworkcore/9.0.0/microsoft.entityframeworkcore.9.0.0.nupkg.sha512",
     "/Users/donatolucente/.nuget/packages/microsoft.entityframeworkcore.abstractions/9.0.0/microsoft.entityframeworkcore.abstractions.9.0.0.nupkg.sha512",

@@ -1992,11 +1992,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "/Users/donatolucente/RiderProjects/AsyncronousComunication/AsyncronousComunication.csproj",
+      "projectUniqueName": "/Users/donatolucente/Desktop/projects/AspNetCore.MessagingOverQueue/AsyncronousComunication.csproj",
       "projectName": "AsyncronousComunication",
-      "projectPath": "/Users/donatolucente/RiderProjects/AsyncronousComunication/AsyncronousComunication.csproj",
+      "projectPath": "/Users/donatolucente/Desktop/projects/AspNetCore.MessagingOverQueue/AsyncronousComunication.csproj",
       "packagesPath": "/Users/donatolucente/.nuget/packages/",
-      "outputPath": "/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/",
+      "outputPath": "/Users/donatolucente/Desktop/projects/AspNetCore.MessagingOverQueue/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "/Users/donatolucente/.nuget/NuGet/NuGet.Config"
