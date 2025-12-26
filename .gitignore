@@ -1,0 +1,72 @@
+# Generated .gitignore for a .NET 9 / Visual Studio project
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.userprefs
+*.ide
+
+# Build results
+[Bb]in/
+[Oo]bj/
+artifacts/
+*.builds
+
+# Publish output
+publish/
+out/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/packages/
+.packages/
+project.lock.json
+
+# Rider
+.idea/
+*.sln.iml
+
+# ReSharper
+_ReSharper*/
+*.DotSettings.user
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# Sensitive files (local settings, secrets)
+secrets.json
+appsettings.*.json
+
+# If you use Visual Studio publish profiles
+*.Publish.xml
+
+# TLS/SSL certs (if accidentally committed)
+*.pfx
+
+# Coverage
+coverage*/
+*.coverage
+*.coveragexml
+
+# Other
+node_modules/
+
+# License file should be tracked
+!LICENSE
