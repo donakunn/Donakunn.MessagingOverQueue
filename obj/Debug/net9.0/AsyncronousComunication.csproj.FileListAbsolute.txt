@@ -1,0 +1,12 @@
+/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/Debug/net9.0/AsyncronousComunication.csproj.AssemblyReference.cache
+/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/Debug/net9.0/AsyncronousComunication.GeneratedMSBuildEditorConfig.editorconfig
+/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/Debug/net9.0/AsyncronousComunication.AssemblyInfoInputs.cache
+/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/Debug/net9.0/AsyncronousComunication.AssemblyInfo.cs
+/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/Debug/net9.0/AsyncronousComunication.csproj.CoreCompileInputs.cache
+/Users/donatolucente/RiderProjects/AsyncronousComunication/bin/Debug/net9.0/AsyncronousComunication.deps.json
+/Users/donatolucente/RiderProjects/AsyncronousComunication/bin/Debug/net9.0/AsyncronousComunication.dll
+/Users/donatolucente/RiderProjects/AsyncronousComunication/bin/Debug/net9.0/AsyncronousComunication.pdb
+/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/Debug/net9.0/AsyncronousComunication.dll
+/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/Debug/net9.0/refint/AsyncronousComunication.dll
+/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/Debug/net9.0/AsyncronousComunication.pdb
+/Users/donatolucente/RiderProjects/AsyncronousComunication/obj/Debug/net9.0/ref/AsyncronousComunication.dll
