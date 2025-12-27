@@ -1,7 +1,7 @@
-using MessagingOverQueue.Abstractions.Messages;
-using MessagingOverQueue.Topology.Attributes;
+using MessagingOverQueue.src.Abstractions.Messages;
+using MessagingOverQueue.src.Topology.Attributes;
 
-namespace MessagingOverQueue.Examples.Messages;
+namespace MessagingOverQueue.Examples;
 
 // ==========================================
 // Basic Event with Default Conventions

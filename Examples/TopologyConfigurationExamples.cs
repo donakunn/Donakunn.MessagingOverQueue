@@ -1,6 +1,6 @@
-using MessagingOverQueue.DependencyInjection;
-using MessagingOverQueue.Examples.Messages;
-using MessagingOverQueue.Topology.DependencyInjection;
+using MessagingOverQueue.src.Abstractions.Consuming;
+using MessagingOverQueue.src.DependencyInjection;
+using MessagingOverQueue.src.Topology.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace MessagingOverQueue.Examples;
@@ -231,9 +231,9 @@ public static class TopologyConfigurationExamples
 }
 
 // Example handler (placeholder)
-internal class OrderCreatedEventHandler : Abstractions.Consuming.IMessageHandler<OrderCreatedEvent>
+internal class OrderCreatedEventHandler : IMessageHandler<OrderCreatedEvent>
 {
-    public Task HandleAsync(OrderCreatedEvent message, Abstractions.Consuming.IMessageContext context, CancellationToken cancellationToken)
+    public Task HandleAsync(OrderCreatedEvent message, IMessageContext context, CancellationToken cancellationToken)
     {
         // Handle the event
         return Task.CompletedTask;

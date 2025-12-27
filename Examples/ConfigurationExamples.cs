@@ -1,5 +1,6 @@
-using MessagingOverQueue.Configuration.Sources;
-using MessagingOverQueue.DependencyInjection;
+using MessagingOverQueue.src.Configuration.Options;
+using MessagingOverQueue.src.Configuration.Sources;
+using MessagingOverQueue.src.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -169,7 +170,7 @@ public class CustomSecretsConfigurationSource : IRabbitMqConfigurationSource
         Priority = priority;
     }
 
-    public void Configure(Configuration.Options.RabbitMqOptions options)
+    public void Configure(RabbitMqOptions options)
     {
         // Example: Load credentials from a vault
         // In real implementation, this would be async and use actual vault service
