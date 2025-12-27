@@ -1,4 +1,4 @@
-# AsyncronousComunication - RabbitMQ Messaging Library
+# MessagingOverQueue - RabbitMQ Messaging Library
 
 A robust, high-performance asynchronous messaging library for .NET built on RabbitMQ with automatic topology management and SOLID design principles.
 
