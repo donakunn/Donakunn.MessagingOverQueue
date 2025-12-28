@@ -6,6 +6,7 @@ using MessagingOverQueue.src.Configuration.Builders;
 using MessagingOverQueue.src.Configuration.Options;
 using MessagingOverQueue.src.Configuration.Sources;
 using MessagingOverQueue.src.Connection;
+using MessagingOverQueue.src.Consuming.Handlers;
 using MessagingOverQueue.src.Consuming.Middleware;
 using MessagingOverQueue.src.DependencyInjection;
 using MessagingOverQueue.src.HealthChecks;
@@ -23,6 +24,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using System.Reflection;
 
 namespace MessagingOverQueue.src.DependencyInjection;
 
@@ -162,12 +164,17 @@ public static class ServiceCollectionExtensions
         RabbitMqConfigurationComposer composer)
     {
         // Configure options using the composer
-        services.Configure<RabbitMqOptions>(composer.CreateConfigureAction());
+        services.Configure(composer.CreateConfigureAction());
 
         // Core services
         services.TryAddSingleton<IRabbitMqConnectionPool, RabbitMqConnectionPool>();
         services.TryAddSingleton<IMessageSerializer, JsonMessageSerializer>();
         services.TryAddSingleton<IMessageTypeResolver, MessageTypeResolver>();
+
+        // Handler invoker services (reflection-free handler dispatch)
+        services.TryAddSingleton<IHandlerInvokerRegistry, HandlerInvokerRegistry>();
+        services.TryAddSingleton<IHandlerInvokerFactory, HandlerInvokerFactory>();
+        services.TryAddSingleton<IHandlerInvokerScanner, HandlerInvokerScanner>();
 
         // Topology services (basic registration - can be enhanced with AddTopology())
         services.TryAddSingleton<ITopologyNamingConvention, DefaultTopologyNamingConvention>();
@@ -253,6 +260,24 @@ public static class ServiceCollectionExtensions
         // Register the message type for resolution
         builder.Services.AddSingleton<IMessageTypeRegistration>(new MessageTypeRegistration<TMessage>());
 
+        // Register handler invoker for this message type (reflection-free dispatch)
+        builder.Services.AddSingleton<IHandlerInvokerRegistration>(new HandlerInvokerRegistration<TMessage>());
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Scans assemblies for handlers and registers them automatically.
+    /// This also registers the corresponding handler invokers for reflection-free dispatch.
+    /// </summary>
+    /// <param name="builder">The messaging builder.</param>
+    /// <param name="assemblies">The assemblies to scan.</param>
+    /// <returns>The messaging builder for chaining.</returns>
+    public static IMessagingBuilder ScanHandlers(
+        this IMessagingBuilder builder,
+        params Assembly[] assemblies)
+    {
+        builder.Services.AddSingleton(new HandlerScanRegistration { Assemblies = assemblies });
         return builder;
     }
 
@@ -373,5 +398,37 @@ internal class MessageTypeRegistration<TMessage> : IMessageTypeRegistration wher
     {
         resolver.RegisterType<TMessage>();
     }
+}
+
+/// <summary>
+/// Interface for handler invoker registrations.
+/// </summary>
+public interface IHandlerInvokerRegistration
+{
+    void Register(IHandlerInvokerRegistry registry, IHandlerInvokerFactory factory);
+}
+
+/// <summary>
+/// Registration for a handler invoker.
+/// </summary>
+public sealed class HandlerInvokerRegistration<TMessage> : IHandlerInvokerRegistration
+    where TMessage : IMessage
+{
+    public void Register(IHandlerInvokerRegistry registry, IHandlerInvokerFactory factory)
+    {
+        if (!registry.IsRegistered(typeof(TMessage)))
+        {
+            var invoker = factory.Create(typeof(TMessage));
+            registry.Register(invoker);
+        }
+    }
+}
+
+/// <summary>
+/// Registration for handler assembly scanning.
+/// </summary>
+public sealed class HandlerScanRegistration
+{
+    public Assembly[] Assemblies { get; init; } = [];
 }
 

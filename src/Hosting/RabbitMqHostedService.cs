@@ -1,5 +1,7 @@
 using MessagingOverQueue.src.Configuration.Options;
 using MessagingOverQueue.src.Connection;
+using MessagingOverQueue.src.Consuming.Handlers;
+using MessagingOverQueue.src.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,48 +11,47 @@ namespace MessagingOverQueue.src.Hosting;
 /// <summary>
 /// Hosted service that manages RabbitMQ topology and lifecycle.
 /// </summary>
-public class RabbitMqHostedService : IHostedService
+public class RabbitMqHostedService(
+    IRabbitMqConnectionPool connectionPool,
+    IHandlerInvokerRegistry handlerInvokerRegistry,
+    IHandlerInvokerFactory handlerInvokerFactory,
+    IEnumerable<IHandlerInvokerRegistration> handlerInvokerRegistrations,
+    IEnumerable<HandlerScanRegistration> scanRegistrations,
+    IHandlerInvokerScanner handlerInvokerScanner,
+    IOptions<RabbitMqOptions> options,
+    ILogger<RabbitMqHostedService> logger) : IHostedService
 {
-    private readonly IRabbitMqConnectionPool _connectionPool;
-    private readonly RabbitMqOptions _options;
-    private readonly ILogger<RabbitMqHostedService> _logger;
-
-    public RabbitMqHostedService(
-        IRabbitMqConnectionPool connectionPool,
-        IOptions<RabbitMqOptions> options,
-        ILogger<RabbitMqHostedService> logger)
-    {
-        _connectionPool = connectionPool;
-        _options = options.Value;
-        _logger = logger;
-    }
+    private readonly RabbitMqOptions _options = options.Value;
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Starting RabbitMQ hosted service");
+        logger.LogInformation("Starting RabbitMQ hosted service");
 
-        await _connectionPool.EnsureConnectedAsync(cancellationToken);
+        // Initialize handler invokers (reflection-free dispatch setup)
+        InitializeHandlerInvokers();
+
+        await connectionPool.EnsureConnectedAsync(cancellationToken);
         await DeclareTopologyAsync(cancellationToken);
 
-        _logger.LogInformation("RabbitMQ hosted service started");
+        logger.LogInformation("RabbitMQ hosted service started");
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Stopping RabbitMQ hosted service");
-        await _connectionPool.DisposeAsync();
-        _logger.LogInformation("RabbitMQ hosted service stopped");
+        logger.LogInformation("Stopping RabbitMQ hosted service");
+        await connectionPool.DisposeAsync();
+        logger.LogInformation("RabbitMQ hosted service stopped");
     }
 
     private async Task DeclareTopologyAsync(CancellationToken cancellationToken)
     {
-        var channel = await _connectionPool.GetChannelAsync(cancellationToken);
+        var channel = await connectionPool.GetChannelAsync(cancellationToken);
         try
         {
             // Declare exchanges
             foreach (var exchange in _options.Exchanges)
             {
-                _logger.LogDebug("Declaring exchange '{Exchange}' of type '{Type}'", exchange.Name, exchange.Type);
+                logger.LogDebug("Declaring exchange '{Exchange}' of type '{Type}'", exchange.Name, exchange.Type);
 
                 await channel.ExchangeDeclareAsync(
                     exchange: exchange.Name,
@@ -64,7 +65,7 @@ public class RabbitMqHostedService : IHostedService
             // Declare queues
             foreach (var queue in _options.Queues)
             {
-                _logger.LogDebug("Declaring queue '{Queue}'", queue.Name);
+                logger.LogDebug("Declaring queue '{Queue}'", queue.Name);
 
                 var arguments = new Dictionary<string, object?>();
 
@@ -106,7 +107,7 @@ public class RabbitMqHostedService : IHostedService
             // Declare bindings
             foreach (var binding in _options.Bindings)
             {
-                _logger.LogDebug("Binding queue '{Queue}' to exchange '{Exchange}' with routing key '{RoutingKey}'",
+                logger.LogDebug("Binding queue '{Queue}' to exchange '{Exchange}' with routing key '{RoutingKey}'",
                     binding.Queue, binding.Exchange, binding.RoutingKey);
 
                 await channel.QueueBindAsync(
@@ -117,12 +118,38 @@ public class RabbitMqHostedService : IHostedService
                     cancellationToken: cancellationToken);
             }
 
-            _logger.LogInformation("RabbitMQ topology declared successfully");
+            logger.LogInformation("RabbitMQ topology declared successfully");
         }
         finally
         {
-            _connectionPool.ReturnChannel(channel);
+            connectionPool.ReturnChannel(channel);
         }
+    }
+
+    /// <summary>
+    /// Initializes handler invokers from explicit registrations and assembly scans.
+    /// This is done once at startup to enable reflection-free handler dispatch.
+    /// </summary>
+    private void InitializeHandlerInvokers()
+    {
+        logger.LogDebug("Initializing handler invokers");
+
+        // Register invokers from explicit AddHandler<THandler, TMessage>() calls
+        foreach (var registration in handlerInvokerRegistrations)
+        {
+            registration.Register(handlerInvokerRegistry, handlerInvokerFactory);
+        }
+
+        // Register invokers from assembly scans
+        foreach (var scanRegistration in scanRegistrations)
+        {
+            if (scanRegistration.Assemblies.Length > 0)
+            {
+                handlerInvokerScanner.ScanAndRegister(scanRegistration.Assemblies);
+            }
+        }
+
+        logger.LogDebug("Handler invokers initialized");
     }
 }
 

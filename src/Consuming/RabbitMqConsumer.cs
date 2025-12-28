@@ -1,7 +1,7 @@
 using MessagingOverQueue.src.Abstractions.Consuming;
-using MessagingOverQueue.src.Abstractions.Messages;
 using MessagingOverQueue.src.Configuration.Options;
 using MessagingOverQueue.src.Connection;
+using MessagingOverQueue.src.Consuming.Handlers;
 using MessagingOverQueue.src.Consuming.Middleware;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,34 +13,19 @@ namespace MessagingOverQueue.src.Consuming;
 /// <summary>
 /// RabbitMQ implementation of message consumer.
 /// </summary>
-public class RabbitMqConsumer : IMessageConsumer
+public class RabbitMqConsumer(
+    IRabbitMqConnectionPool connectionPool,
+    IServiceProvider serviceProvider,
+    IHandlerInvokerRegistry handlerInvokerRegistry,
+    ConsumerOptions options,
+    IEnumerable<IConsumeMiddleware> middlewares,
+    ILogger<RabbitMqConsumer> logger) : IMessageConsumer
 {
-    private readonly IRabbitMqConnectionPool _connectionPool;
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ConsumerOptions _options;
-    private readonly IEnumerable<IConsumeMiddleware> _middlewares;
-    private readonly ILogger<RabbitMqConsumer> _logger;
-
     private IChannel? _channel;
     private string? _consumerTag;
-    private readonly SemaphoreSlim _concurrencySemaphore;
+    private readonly SemaphoreSlim _concurrencySemaphore = new(options.MaxConcurrency, options.MaxConcurrency);
     private volatile bool _isRunning;
     private readonly CancellationTokenSource _stoppingCts = new();
-
-    public RabbitMqConsumer(
-        IRabbitMqConnectionPool connectionPool,
-        IServiceProvider serviceProvider,
-        ConsumerOptions options,
-        IEnumerable<IConsumeMiddleware> middlewares,
-        ILogger<RabbitMqConsumer> logger)
-    {
-        _connectionPool = connectionPool;
-        _serviceProvider = serviceProvider;
-        _options = options;
-        _middlewares = middlewares;
-        _logger = logger;
-        _concurrencySemaphore = new SemaphoreSlim(options.MaxConcurrency, options.MaxConcurrency);
-    }
 
     public bool IsRunning => _isRunning;
 
@@ -49,24 +34,24 @@ public class RabbitMqConsumer : IMessageConsumer
         if (_isRunning)
             return;
 
-        _logger.LogInformation("Starting consumer for queue '{Queue}' with prefetch {Prefetch}",
-            _options.QueueName, _options.PrefetchCount);
+        logger.LogInformation("Starting consumer for queue '{Queue}' with prefetch {Prefetch}",
+            options.QueueName, options.PrefetchCount);
 
-        _channel = await _connectionPool.CreateDedicatedChannelAsync(cancellationToken);
-        await _channel.BasicQosAsync(0, _options.PrefetchCount, false, cancellationToken);
+        _channel = await connectionPool.CreateDedicatedChannelAsync(cancellationToken);
+        await _channel.BasicQosAsync(0, options.PrefetchCount, false, cancellationToken);
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
         consumer.ReceivedAsync += OnMessageReceivedAsync;
 
         _consumerTag = await _channel.BasicConsumeAsync(
-            queue: _options.QueueName,
-            autoAck: _options.AutoAck,
-            consumerTag: _options.ConsumerTag ?? $"consumer-{Guid.NewGuid():N}",
+            queue: options.QueueName,
+            autoAck: options.AutoAck,
+            consumerTag: options.ConsumerTag ?? $"consumer-{Guid.NewGuid():N}",
             consumer: consumer,
             cancellationToken: cancellationToken);
 
         _isRunning = true;
-        _logger.LogInformation("Consumer started with tag '{ConsumerTag}'", _consumerTag);
+        logger.LogInformation("Consumer started with tag '{ConsumerTag}'", _consumerTag);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
@@ -74,7 +59,7 @@ public class RabbitMqConsumer : IMessageConsumer
         if (!_isRunning)
             return;
 
-        _logger.LogInformation("Stopping consumer '{ConsumerTag}'", _consumerTag);
+        logger.LogInformation("Stopping consumer '{ConsumerTag}'", _consumerTag);
 
         await _stoppingCts.CancelAsync();
 
@@ -86,12 +71,12 @@ public class RabbitMqConsumer : IMessageConsumer
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error canceling consumer");
+                logger.LogWarning(ex, "Error canceling consumer");
             }
         }
 
         _isRunning = false;
-        _logger.LogInformation("Consumer stopped");
+        logger.LogInformation("Consumer stopped");
     }
 
     private async Task OnMessageReceivedAsync(object sender, BasicDeliverEventArgs args)
@@ -101,24 +86,24 @@ public class RabbitMqConsumer : IMessageConsumer
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
-            cts.CancelAfter(_options.ProcessingTimeout);
+            cts.CancelAfter(options.ProcessingTimeout);
 
             await ProcessMessageAsync(args, cts.Token);
         }
         catch (OperationCanceledException) when (_stoppingCts.IsCancellationRequested)
         {
-            _logger.LogDebug("Message processing cancelled due to shutdown");
-            if (!_options.AutoAck && _channel != null)
+            logger.LogDebug("Message processing cancelled due to shutdown");
+            if (!options.AutoAck && _channel != null)
             {
                 await _channel.BasicNackAsync(args.DeliveryTag, false, true);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing message, delivery tag: {DeliveryTag}", args.DeliveryTag);
-            if (!_options.AutoAck && _channel != null)
+            logger.LogError(ex, "Error processing message, delivery tag: {DeliveryTag}", args.DeliveryTag);
+            if (!options.AutoAck && _channel != null)
             {
-                await _channel.BasicNackAsync(args.DeliveryTag, false, _options.RequeueOnFailure);
+                await _channel.BasicNackAsync(args.DeliveryTag, false, options.RequeueOnFailure);
             }
         }
         finally
@@ -137,7 +122,7 @@ public class RabbitMqConsumer : IMessageConsumer
 
         var messageContext = new MessageContext(
             messageId: Guid.TryParse(args.BasicProperties.MessageId, out var id) ? id : Guid.NewGuid(),
-            queueName: _options.QueueName,
+            queueName: options.QueueName,
             correlationId: args.BasicProperties.CorrelationId,
             exchangeName: args.Exchange,
             routingKey: args.RoutingKey,
@@ -154,10 +139,10 @@ public class RabbitMqConsumer : IMessageConsumer
             ContentType = args.BasicProperties.ContentType
         };
 
-        var pipeline = new ConsumePipeline(_middlewares, HandleMessageAsync);
+        var pipeline = new ConsumePipeline(middlewares, HandleMessageAsync);
         await pipeline.ExecuteAsync(context, cancellationToken);
 
-        if (!_options.AutoAck && _channel != null)
+        if (!options.AutoAck && _channel != null)
         {
             if (context.ShouldReject)
             {
@@ -174,25 +159,25 @@ public class RabbitMqConsumer : IMessageConsumer
     {
         if (context.Message == null || context.MessageType == null)
         {
-            _logger.LogWarning("Message was not deserialized, skipping handler invocation");
+            logger.LogWarning("Message was not deserialized, skipping handler invocation");
             return;
         }
 
-        using var scope = _serviceProvider.CreateScope();
-
-        var handlerType = typeof(IMessageHandler<>).MakeGenericType(context.MessageType);
-        var handlers = scope.ServiceProvider.GetServices(handlerType);
-
-        foreach (var handler in handlers)
+        var invoker = handlerInvokerRegistry.GetInvoker(context.MessageType);
+        if (invoker == null)
         {
-            if (handler == null) continue;
-
-            var method = handlerType.GetMethod(nameof(IMessageHandler<IMessage>.HandleAsync));
-            if (method != null)
-            {
-                await (Task)method.Invoke(handler, new object[] { context.Message, context.MessageContext, cancellationToken })!;
-            }
+            logger.LogWarning(
+                "No handler invoker registered for message type {MessageType}",
+                context.MessageType.Name);
+            return;
         }
+
+        using var scope = serviceProvider.CreateScope();
+        await invoker.InvokeAsync(
+            scope.ServiceProvider,
+            context.Message,
+            context.MessageContext,
+            cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

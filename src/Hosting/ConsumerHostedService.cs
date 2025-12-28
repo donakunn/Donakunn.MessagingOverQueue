@@ -2,6 +2,7 @@ using MessagingOverQueue.src.Abstractions.Consuming;
 using MessagingOverQueue.src.Configuration.Options;
 using MessagingOverQueue.src.Connection;
 using MessagingOverQueue.src.Consuming;
+using MessagingOverQueue.src.Consuming.Handlers;
 using MessagingOverQueue.src.Consuming.Middleware;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -12,61 +13,53 @@ namespace MessagingOverQueue.src.Hosting;
 /// <summary>
 /// Hosted service that manages message consumers.
 /// </summary>
-public class ConsumerHostedService : IHostedService, IAsyncDisposable
+public class ConsumerHostedService(
+    IServiceProvider serviceProvider,
+    IEnumerable<ConsumerRegistration> registrations,
+    ILogger<ConsumerHostedService> logger) : IHostedService, IAsyncDisposable
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IEnumerable<ConsumerRegistration> _registrations;
-    private readonly ILogger<ConsumerHostedService> _logger;
     private readonly List<IMessageConsumer> _consumers = new();
-
-    public ConsumerHostedService(
-        IServiceProvider serviceProvider,
-        IEnumerable<ConsumerRegistration> registrations,
-        ILogger<ConsumerHostedService> logger)
-    {
-        _serviceProvider = serviceProvider;
-        _registrations = registrations;
-        _logger = logger;
-    }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Starting consumer hosted service");
+        logger.LogInformation("Starting consumer hosted service");
 
-        foreach (var registration in _registrations)
+        foreach (var registration in registrations)
         {
             var consumer = CreateConsumer(registration);
             _consumers.Add(consumer);
 
             await consumer.StartAsync(cancellationToken);
-            _logger.LogInformation("Started consumer for queue '{Queue}'", registration.Options.QueueName);
+            logger.LogInformation("Started consumer for queue '{Queue}'", registration.Options.QueueName);
         }
 
-        _logger.LogInformation("All consumers started ({Count} total)", _consumers.Count);
+        logger.LogInformation("All consumers started ({Count} total)", _consumers.Count);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Stopping consumer hosted service");
+        logger.LogInformation("Stopping consumer hosted service");
 
         var stopTasks = _consumers.Select(c => c.StopAsync(cancellationToken));
         await Task.WhenAll(stopTasks);
 
-        _logger.LogInformation("All consumers stopped");
+        logger.LogInformation("All consumers stopped");
     }
 
-    private IMessageConsumer CreateConsumer(ConsumerRegistration registration)
+    private RabbitMqConsumer CreateConsumer(ConsumerRegistration registration)
     {
-        var connectionPool = _serviceProvider.GetRequiredService<IRabbitMqConnectionPool>();
-        var middlewares = _serviceProvider.GetServices<IConsumeMiddleware>();
-        var logger = _serviceProvider.GetRequiredService<ILogger<RabbitMqConsumer>>();
+        var connectionPool = serviceProvider.GetRequiredService<IRabbitMqConnectionPool>();
+        var handlerInvokerRegistry = serviceProvider.GetRequiredService<IHandlerInvokerRegistry>();
+        var middlewares = serviceProvider.GetServices<IConsumeMiddleware>();
+        var consumerLogger = serviceProvider.GetRequiredService<ILogger<RabbitMqConsumer>>();
 
         return new RabbitMqConsumer(
             connectionPool,
-            _serviceProvider,
+            serviceProvider,
+            handlerInvokerRegistry,
             registration.Options,
             middlewares,
-            logger);
+            consumerLogger);
     }
 
     public async ValueTask DisposeAsync()
