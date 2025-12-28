@@ -76,7 +76,7 @@ public class RabbitMqPublisher(
         return PublishAsync(command, string.Empty, queueName, cancellationToken);
     }
 
-    private async Task PublishToRabbitMqAsync(PublishContext context, CancellationToken cancellationToken)
+    public async Task PublishToRabbitMqAsync(PublishContext context, CancellationToken cancellationToken)
     {
         var channel = await connectionPool.GetChannelAsync(cancellationToken);
         try

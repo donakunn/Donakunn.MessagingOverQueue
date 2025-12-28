@@ -67,7 +67,7 @@ public class PollyRetryPolicy : IRetryPolicy
         // Retry transient errors
         return exception is TimeoutException or
             OperationCanceledException or
-            System.IO.IOException or
+            IOException or
             System.Net.Sockets.SocketException;
     }
 }

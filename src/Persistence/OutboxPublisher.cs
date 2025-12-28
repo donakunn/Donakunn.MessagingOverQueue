@@ -31,7 +31,7 @@ public class OutboxPublisher(
         {
             Id = message.Id,
             MessageType = message.MessageType,
-            Payload = serializer.Serialize(message, typeof(T)),
+            Payload = serializer.Serialize(message),
             ExchangeName = options.ExchangeName,
             RoutingKey = options.RoutingKey ?? GetDefaultRoutingKey<T>(),
             Headers = options.Headers != null ? JsonSerializer.Serialize(options.Headers) : null,

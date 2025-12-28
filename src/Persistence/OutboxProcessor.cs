@@ -128,26 +128,22 @@ public class OutboxProcessor(
 
     private async Task PublishRawAsync(OutboxMessage message, PublishOptions options, CancellationToken cancellationToken)
     {
-        // This is a simplified implementation - in production, you'd want direct channel access
-        // For now, we use reflection to access the internal publish method
-        var publisherType = publisher.GetType();
-        var method = publisherType.GetMethod("PublishToRabbitMqAsync",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (message.Payload == null || message.Payload.Length == 0)
+            throw new ArgumentException($"Outbox message {message.Id} has empty payload.");
 
-        if (method != null)
+        var context = new Publishing.Middleware.PublishContext
         {
-            // Create a minimal context for raw publishing
-            var context = new Publishing.Middleware.PublishContext
-            {
-                Body = message.Payload,
-                ExchangeName = message.ExchangeName,
-                RoutingKey = message.RoutingKey,
-                Persistent = true,
-                ContentType = "application/json"
-            };
+            Body = message.Payload,
+            ExchangeName = message.ExchangeName,
+            RoutingKey = message.RoutingKey,
+            Persistent = true,
+            ContentType = "application/json"
+        };
 
-            // Parse headers
-            if (message.Headers != null)
+        // Parse headers
+        if (!string.IsNullOrWhiteSpace(message.Headers))
+        {
+            try
             {
                 var headers = JsonSerializer.Deserialize<Dictionary<string, object>>(message.Headers);
                 if (headers != null)
@@ -158,11 +154,22 @@ public class OutboxProcessor(
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to deserialize headers for outbox message {MessageId}", message.Id);
+            }
+        }
 
-            context.Headers["message-type"] = message.MessageType;
-            context.Headers["message-id"] = message.Id.ToString();
+        context.Headers["message-type"] = message.MessageType;
+        context.Headers["message-id"] = message.Id.ToString();
 
-            await (Task)method.Invoke(publisher, [context, cancellationToken])!;
+        if (publisher is RabbitMqPublisher directPublisher)
+        {
+            await directPublisher.PublishToRabbitMqAsync(context, cancellationToken);
+        }
+        else
+        {
+            throw new InvalidOperationException("Publisher does not support raw publishing.");
         }
     }
 

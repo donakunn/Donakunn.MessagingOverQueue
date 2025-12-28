@@ -16,6 +16,7 @@ using MessagingOverQueue.src.Persistence.Repositories;
 using MessagingOverQueue.src.Publishing;
 using MessagingOverQueue.src.Publishing.Middleware;
 using MessagingOverQueue.src.Resilience;
+using MessagingOverQueue.src.Resilience.CircuitBreaker;
 using MessagingOverQueue.src.Topology;
 using MessagingOverQueue.src.Topology.Abstractions;
 using MessagingOverQueue.Topology.Conventions;
