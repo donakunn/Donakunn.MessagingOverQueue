@@ -1,7 +1,5 @@
 using MessagingOverQueue.src.Configuration.Options;
 using MessagingOverQueue.src.Connection;
-using MessagingOverQueue.src.Consuming.Handlers;
-using MessagingOverQueue.src.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,15 +7,12 @@ using Microsoft.Extensions.Options;
 namespace MessagingOverQueue.src.Hosting;
 
 /// <summary>
-/// Hosted service that manages RabbitMQ topology and lifecycle.
+/// Hosted service that manages RabbitMQ connection lifecycle.
+/// Single responsibility: ensure connection is established and cleaned up properly.
+/// Topology declaration is handled by TopologyInitializationHostedService.
 /// </summary>
-public class RabbitMqHostedService(
+public sealed class RabbitMqHostedService(
     IRabbitMqConnectionPool connectionPool,
-    IHandlerInvokerRegistry handlerInvokerRegistry,
-    IHandlerInvokerFactory handlerInvokerFactory,
-    IEnumerable<IHandlerInvokerRegistration> handlerInvokerRegistrations,
-    IEnumerable<HandlerScanRegistration> scanRegistrations,
-    IHandlerInvokerScanner handlerInvokerScanner,
     IOptions<RabbitMqOptions> options,
     ILogger<RabbitMqHostedService> logger) : IHostedService
 {
@@ -27,11 +22,13 @@ public class RabbitMqHostedService(
     {
         logger.LogInformation("Starting RabbitMQ hosted service");
 
-        // Initialize handler invokers (reflection-free dispatch setup)
-        InitializeHandlerInvokers();
-
         await connectionPool.EnsureConnectedAsync(cancellationToken);
-        await DeclareTopologyAsync(cancellationToken);
+
+        // Declare legacy topology from options (for backwards compatibility)
+        if (HasLegacyTopology())
+        {
+            await DeclareLegacyTopologyAsync(cancellationToken);
+        }
 
         logger.LogInformation("RabbitMQ hosted service started");
     }
@@ -43,7 +40,18 @@ public class RabbitMqHostedService(
         logger.LogInformation("RabbitMQ hosted service stopped");
     }
 
-    private async Task DeclareTopologyAsync(CancellationToken cancellationToken)
+    private bool HasLegacyTopology()
+    {
+        return _options.Exchanges.Count > 0 ||
+               _options.Queues.Count > 0 ||
+               _options.Bindings.Count > 0;
+    }
+
+    /// <summary>
+    /// Declares topology from RabbitMqOptions for backwards compatibility.
+    /// New code should use AddTopology() instead.
+    /// </summary>
+    private async Task DeclareLegacyTopologyAsync(CancellationToken cancellationToken)
     {
         var channel = await connectionPool.GetChannelAsync(cancellationToken);
         try
@@ -67,33 +75,7 @@ public class RabbitMqHostedService(
             {
                 logger.LogDebug("Declaring queue '{Queue}'", queue.Name);
 
-                var arguments = new Dictionary<string, object?>();
-
-                if (queue.DeadLetterExchange != null)
-                    arguments["x-dead-letter-exchange"] = queue.DeadLetterExchange;
-
-                if (queue.DeadLetterRoutingKey != null)
-                    arguments["x-dead-letter-routing-key"] = queue.DeadLetterRoutingKey;
-
-                if (queue.MessageTtl.HasValue)
-                    arguments["x-message-ttl"] = queue.MessageTtl.Value;
-
-                if (queue.MaxLength.HasValue)
-                    arguments["x-max-length"] = queue.MaxLength.Value;
-
-                if (queue.MaxLengthBytes.HasValue)
-                    arguments["x-max-length-bytes"] = queue.MaxLengthBytes.Value;
-
-                if (queue.OverflowBehavior != null)
-                    arguments["x-overflow"] = queue.OverflowBehavior;
-
-                if (queue.Arguments != null)
-                {
-                    foreach (var arg in queue.Arguments)
-                    {
-                        arguments[arg.Key] = arg.Value;
-                    }
-                }
+                var arguments = BuildQueueArguments(queue);
 
                 await channel.QueueDeclareAsync(
                     queue: queue.Name,
@@ -118,7 +100,7 @@ public class RabbitMqHostedService(
                     cancellationToken: cancellationToken);
             }
 
-            logger.LogInformation("RabbitMQ topology declared successfully");
+            logger.LogInformation("Legacy RabbitMQ topology declared successfully");
         }
         finally
         {
@@ -126,30 +108,37 @@ public class RabbitMqHostedService(
         }
     }
 
-    /// <summary>
-    /// Initializes handler invokers from explicit registrations and assembly scans.
-    /// This is done once at startup to enable reflection-free handler dispatch.
-    /// </summary>
-    private void InitializeHandlerInvokers()
+    private static Dictionary<string, object?> BuildQueueArguments(QueueOptions queue)
     {
-        logger.LogDebug("Initializing handler invokers");
+        var arguments = new Dictionary<string, object?>();
 
-        // Register invokers from explicit AddHandler<THandler, TMessage>() calls
-        foreach (var registration in handlerInvokerRegistrations)
-        {
-            registration.Register(handlerInvokerRegistry, handlerInvokerFactory);
-        }
+        if (queue.DeadLetterExchange != null)
+            arguments["x-dead-letter-exchange"] = queue.DeadLetterExchange;
 
-        // Register invokers from assembly scans
-        foreach (var scanRegistration in scanRegistrations)
+        if (queue.DeadLetterRoutingKey != null)
+            arguments["x-dead-letter-routing-key"] = queue.DeadLetterRoutingKey;
+
+        if (queue.MessageTtl.HasValue)
+            arguments["x-message-ttl"] = queue.MessageTtl.Value;
+
+        if (queue.MaxLength.HasValue)
+            arguments["x-max-length"] = queue.MaxLength.Value;
+
+        if (queue.MaxLengthBytes.HasValue)
+            arguments["x-max-length-bytes"] = queue.MaxLengthBytes.Value;
+
+        if (queue.OverflowBehavior != null)
+            arguments["x-overflow"] = queue.OverflowBehavior;
+
+        if (queue.Arguments != null)
         {
-            if (scanRegistration.Assemblies.Length > 0)
+            foreach (var arg in queue.Arguments)
             {
-                handlerInvokerScanner.ScanAndRegister(scanRegistration.Assemblies);
+                arguments[arg.Key] = arg.Value;
             }
         }
 
-        logger.LogDebug("Handler invokers initialized");
+        return arguments;
     }
 }
 

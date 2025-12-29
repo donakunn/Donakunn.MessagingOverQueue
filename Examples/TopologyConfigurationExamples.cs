@@ -7,8 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace MessagingOverQueue.Examples;
 
 /// <summary>
-/// Examples demonstrating the new handler-based topology configuration.
-/// The library now scans for message handlers and automatically:
+/// Examples demonstrating the handler-based topology configuration.
+/// The library scans for message handlers and automatically:
 /// - Registers topology (exchanges, queues, bindings)
 /// - Registers handlers in DI
 /// - Sets up consumers for each handler's queue
@@ -16,7 +16,7 @@ namespace MessagingOverQueue.Examples;
 public static class TopologyConfigurationExamples
 {
     /// <summary>
-    /// Example 1: Handler-based auto-discovery (NEW - Recommended)
+    /// Example 1: Handler-based auto-discovery (Recommended)
     /// Scans assemblies for IMessageHandler implementations and automatically configures everything.
     /// </summary>
     public static void ConfigureWithHandlerDiscovery(IServiceCollection services)
@@ -25,7 +25,7 @@ public static class TopologyConfigurationExamples
             .UseHost("localhost")
             .UsePort(5672)
             .WithCredentials("guest", "guest"))
-            // Add topology - scans for handlers, not message types
+            // Add topology - scans for handlers and configures everything automatically
             .AddTopology(topology => topology
                 // Set service name for queue naming
                 .WithServiceName("order-service")
@@ -141,29 +141,8 @@ public static class TopologyConfigurationExamples
     }
 
     /// <summary>
-    /// Example 6: Legacy message-type based discovery (for backward compatibility).
-    /// </summary>
-    public static void ConfigureWithLegacyDiscovery(IServiceCollection services)
-    {
-        services.AddRabbitMqMessaging(options => options
-            .UseHost("localhost")
-            .WithCredentials("guest", "guest"))
-            .AddTopology(topology => topology
-                .WithServiceName("legacy-service")
-                // Use old behavior - scan for message types
-                .UseMessageTypeDiscovery()
-                .ScanAssemblyContaining<OrderCreatedEvent>())
-            // With legacy mode, you need to manually register handlers and consumers
-            .AddHandler<OrderCreatedEventHandler, OrderCreatedEvent>()
-            .AddConsumer("legacy-service.order-created", options =>
-            {
-                options.PrefetchCount = 10;
-                options.MaxConcurrency = 5;
-            });
-    }
-
-    /// <summary>
-    /// Example 7: Manual-only configuration (no auto-discovery).
+    /// Example 6: Manual-only configuration (no auto-discovery).
+    /// Use this when you want complete control over topology and handlers.
     /// </summary>
     public static void ConfigureManualOnly(IServiceCollection services)
     {
@@ -182,6 +161,18 @@ public static class TopologyConfigurationExamples
                     .WithRoutingKey("orders.create")))
             .AddHandler<OrderCreatedEventHandler, OrderCreatedEvent>()
             .AddConsumer("order-events");
+    }
+
+    /// <summary>
+    /// Example 7: Shorthand topology configuration.
+    /// </summary>
+    public static void ConfigureWithShorthand(IServiceCollection services)
+    {
+        // Shortest form - scan assembly containing a marker type
+        services.AddRabbitMqMessaging(options => options
+            .UseHost("localhost")
+            .WithCredentials("guest", "guest"))
+            .AddTopologyFromAssemblyContaining<OrderCreatedEventHandler>();
     }
 }
 

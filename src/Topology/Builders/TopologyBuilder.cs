@@ -12,11 +12,9 @@ public sealed class TopologyBuilder
 {
     private readonly List<TopologyDefinition> _definitions = [];
     private readonly List<Assembly> _assembliesToScan = [];
-    private readonly List<HandlerRegistration> _handlerRegistrations = [];
     private TopologyNamingOptions _namingOptions = new();
     private TopologyProviderOptions _providerOptions = new();
     private bool _autoDiscoverEnabled = true;
-    private bool _useHandlerBasedDiscovery = true;
 
     /// <summary>
     /// Configures the naming convention options.
@@ -59,7 +57,11 @@ public sealed class TopologyBuilder
     /// </summary>
     public TopologyBuilder ScanAssembly(Assembly assembly)
     {
-        _assembliesToScan.Add(assembly);
+        ArgumentNullException.ThrowIfNull(assembly);
+        if (!_assembliesToScan.Contains(assembly))
+        {
+            _assembliesToScan.Add(assembly);
+        }
         return this;
     }
 
@@ -68,7 +70,10 @@ public sealed class TopologyBuilder
     /// </summary>
     public TopologyBuilder ScanAssemblies(params Assembly[] assemblies)
     {
-        _assembliesToScan.AddRange(assemblies);
+        foreach (var assembly in assemblies)
+        {
+            ScanAssembly(assembly);
+        }
         return this;
     }
 
@@ -77,12 +82,12 @@ public sealed class TopologyBuilder
     /// </summary>
     public TopologyBuilder ScanAssemblyContaining<T>()
     {
-        _assembliesToScan.Add(typeof(T).Assembly);
-        return this;
+        return ScanAssembly(typeof(T).Assembly);
     }
 
     /// <summary>
     /// Disables auto-discovery of message handlers.
+    /// Use this when manually configuring all handlers and topology.
     /// </summary>
     public TopologyBuilder DisableAutoDiscovery()
     {
@@ -91,16 +96,7 @@ public sealed class TopologyBuilder
     }
 
     /// <summary>
-    /// Uses legacy message-type based discovery instead of handler-based.
-    /// </summary>
-    public TopologyBuilder UseMessageTypeDiscovery()
-    {
-        _useHandlerBasedDiscovery = false;
-        return this;
-    }
-
-    /// <summary>
-    /// Adds a topology definition for a message type.
+    /// Adds a topology definition for a message type manually.
     /// </summary>
     public TopologyBuilder AddTopology<TMessage>(Action<MessageTopologyBuilder<TMessage>> configure)
     {
@@ -150,27 +146,9 @@ public sealed class TopologyBuilder
     public IReadOnlyList<TopologyDefinition> Definitions => _definitions;
 
     /// <summary>
-    /// Gets the handler registrations.
-    /// </summary>
-    public IReadOnlyList<HandlerRegistration> HandlerRegistrations => _handlerRegistrations;
-
-    /// <summary>
     /// Gets whether auto-discovery is enabled.
     /// </summary>
     public bool AutoDiscoverEnabled => _autoDiscoverEnabled;
-
-    /// <summary>
-    /// Gets whether handler-based discovery is enabled.
-    /// </summary>
-    public bool UseHandlerBasedDiscovery => _useHandlerBasedDiscovery;
-
-    /// <summary>
-    /// Internal method to add handler registration.
-    /// </summary>
-    internal void AddHandlerRegistration(HandlerRegistration registration)
-    {
-        _handlerRegistrations.Add(registration);
-    }
 }
 
 /// <summary>

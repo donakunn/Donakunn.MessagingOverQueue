@@ -58,7 +58,10 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
         {
             // Events: include service name for subscriber isolation
             var serviceName = _options.ServiceName ?? "default";
-            return FormatName($"{serviceName}{_options.QueueSeparator}{baseName}");
+            // Format individual parts before concatenation to avoid incorrect hyphen insertion
+            var formattedServiceName = FormatName(serviceName);
+            var formattedBaseName = FormatName(baseName);
+            return $"{formattedServiceName}{_options.QueueSeparator}{formattedBaseName}";
         }
 
         if (typeof(ICommand).IsAssignableFrom(messageType))
@@ -85,7 +88,11 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
         var messageBaseName = GetBaseName(messageType);
         var serviceName = _options.ServiceName ?? GetServiceNameFromHandler(handlerType);
 
-        return FormatName($"{serviceName}{_options.QueueSeparator}{messageBaseName}");
+        // Format individual parts before concatenation to avoid incorrect hyphen insertion
+        var formattedServiceName = FormatName(serviceName);
+        var formattedMessageName = FormatName(messageBaseName);
+
+        return $"{formattedServiceName}{_options.QueueSeparator}{formattedMessageName}";
     }
 
     /// <inheritdoc />
