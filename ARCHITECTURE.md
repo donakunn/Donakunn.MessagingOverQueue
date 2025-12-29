@@ -1,4 +1,4 @@
-# AsyncronousComunication - Architecture & Technical Documentation
+# MessagingOverQueue - Architecture & Technical Documentation
 
 ## Table of Contents
 
@@ -19,28 +19,28 @@
 The library follows a layered architecture with clean separation of concerns:
 
 ```
-???????????????????????????????????????????????????????????????????
-?                    Application Layer                             ?
-?  (ICommandSender, IEventPublisher, IMessageHandler<T>)          ?
-???????????????????????????????????????????????????????????????????
-?                   Middleware Pipeline Layer                      ?
-?  Publishing: Logging ? Serialization ? Topology Resolution      ?
-?  Consuming: Logging ? Deserialization ? Idempotency ? Retry     ?
-???????????????????????????????????????????????????????????????????
-?                     Topology Layer                               ?
-?  Auto-Discovery, Convention-Based Naming, Registry              ?
-???????????????????????????????????????????????????????????????????
-?                Infrastructure Layer                              ?
-?  RabbitMqPublisher, RabbitMqConsumer, OutboxPublisher           ?
-???????????????????????????????????????????????????????????????????
-?                 Configuration Layer                              ?
-?  Sources: Aspire ? AppSettings ? Fluent API ? Custom            ?
-???????????????????????????????????????????????????????????????????
-?                   Connection Pool                                ?
-?  RabbitMqConnectionPool (Channel Pooling & Lifecycle)           ?
-???????????????????????????????????????????????????????????????????
-?                      RabbitMQ Broker                             ?
-???????????????????????????????????????????????????????????????????
+???????????????????????????????????????????????????????????????????????
+?                    Application Layer                                 ?
+?  (ICommandSender, IEventPublisher, IMessageHandler<T>)              ?
+???????????????????????????????????????????????????????????????????????
+?                   Middleware Pipeline Layer                          ?
+?  Publishing: Logging ? Serialization ? Topology Resolution          ?
+?  Consuming: Logging ? Deserialization ? Idempotency ? Retry         ?
+???????????????????????????????????????????????????????????????????????
+?                     Topology Layer                                   ?
+?  Auto-Discovery, Convention-Based Naming, Registry                  ?
+???????????????????????????????????????????????????????????????????????
+?                Infrastructure Layer                                  ?
+?  RabbitMqPublisher, RabbitMqConsumer, OutboxPublisher               ?
+???????????????????????????????????????????????????????????????????????
+?                 Configuration Layer                                  ?
+?  Sources: Aspire ? AppSettings ? Fluent API ? Custom                ?
+???????????????????????????????????????????????????????????????????????
+?                   Connection Pool                                    ?
+?  RabbitMqConnectionPool (Channel Pooling & Lifecycle)               ?
+???????????????????????????????????????????????????????????????????????
+?                      RabbitMQ Broker                                 ?
+???????????????????????????????????????????????????????????????????????
 ```
 
 ### Design Principles
@@ -68,7 +68,7 @@ The library follows a layered architecture with clean separation of concerns:
 
 ### 1. Message Abstractions
 
-**Location**: `Abstractions/Messages/`
+**Location**: `src/Abstractions/Messages/`
 
 #### IMessage Interface
 ```csharp
@@ -85,7 +85,7 @@ public interface IMessage
 #### Message Types
 - **ICommand**: Point-to-point messages (one handler)
 - **IEvent**: Pub/sub messages (multiple subscribers)
-- **IQuery<TResult>**: Request/response pattern (future)
+- **IQuery<TResult>**: Request/response pattern
 
 #### MessageBase
 Abstract base class providing:
@@ -96,7 +96,7 @@ Abstract base class providing:
 
 ### 2. Publishers
 
-**Location**: `Publishing/`
+**Location**: `src/Publishing/`
 
 #### RabbitMqPublisher
 The core publisher implementing:
@@ -106,7 +106,7 @@ The core publisher implementing:
 
 **Key Features**:
 - Middleware pipeline integration
-- Topology-aware routing
+- Topology-aware routing via `IMessageRoutingResolver`
 - Channel pooling for concurrency
 - Automatic serialization
 
@@ -125,31 +125,32 @@ Transactional publishing via outbox pattern:
 
 ### 3. Consumers
 
-**Location**: `Consuming/`
+**Location**: `src/Consuming/`
 
 #### RabbitMqConsumer
 Manages message consumption:
-- Channel lifecycle
+- Dedicated channel per consumer
 - Message acknowledgment
-- Prefetch and concurrency control
+- Prefetch and concurrency control via `SemaphoreSlim`
 - Middleware pipeline execution
+- Processing timeout with cancellation
 
 **Consumption Flow**:
 ```
-Receive from Queue ? Middleware Pipeline ? Deserialize ? 
-Handler Resolution ? Execute Handler ? ACK/NACK
+Receive from Queue ? Acquire Semaphore ? Middleware Pipeline ? Deserialize ? 
+Handler Resolution ? Execute Handler ? ACK/NACK ? Release Semaphore
 ```
 
 #### ConsumerHostedService
 Manages multiple consumers:
 - Lifecycle management
+- Waits for topology initialization via `TopologyReadySignal`
 - Parallel consumer startup
 - Graceful shutdown
-- DI scope per message
 
 ### 4. Message Handlers
 
-**Location**: `Abstractions/Consuming/`
+**Location**: `src/Abstractions/Consuming/`
 
 ```csharp
 public interface IMessageHandler<in TMessage> where TMessage : IMessage
@@ -166,6 +167,68 @@ public interface IMessageHandler<in TMessage> where TMessage : IMessage
 - Queue and routing information
 - Custom headers
 - Correlation tracking
+
+### 5. Handler Invoker System
+
+**Location**: `src/Consuming/Handlers/`
+
+The handler invoker system provides reflection-free message dispatch:
+
+#### IHandlerInvoker
+```csharp
+public interface IHandlerInvoker
+{
+    Type MessageType { get; }
+    Task InvokeAsync(
+        IServiceProvider serviceProvider,
+        IMessage message,
+        IMessageContext context,
+        CancellationToken cancellationToken);
+}
+```
+
+#### HandlerInvoker<TMessage>
+```csharp
+internal sealed class HandlerInvoker<TMessage> : IHandlerInvoker
+    where TMessage : IMessage
+{
+    public Type MessageType => typeof(TMessage);
+
+    public async Task InvokeAsync(
+        IServiceProvider serviceProvider,
+        IMessage message,
+        IMessageContext context,
+        CancellationToken cancellationToken)
+    {
+        // Resolve ALL handlers for this message type (supports multiple handlers)
+        var handlers = serviceProvider.GetServices<IMessageHandler<TMessage>>();
+
+        foreach (var handler in handlers)
+        {
+            // Strongly-typed call - no reflection, no boxing
+            await handler.HandleAsync((TMessage)message, context, cancellationToken);
+        }
+    }
+}
+```
+
+#### HandlerInvokerRegistry
+```csharp
+public sealed class HandlerInvokerRegistry : IHandlerInvokerRegistry
+{
+    private readonly ConcurrentDictionary<Type, IHandlerInvoker> _invokers = new();
+
+    public IHandlerInvoker? GetInvoker(Type messageType)
+    {
+        return _invokers.TryGetValue(messageType, out var invoker) ? invoker : null;
+    }
+
+    public void Register(IHandlerInvoker invoker)
+    {
+        _invokers.TryAdd(invoker.MessageType, invoker);
+    }
+}
+```
 
 ---
 
@@ -184,6 +247,8 @@ RabbitMqConfigurationComposer
 ```
 
 ### Configuration Sources
+
+**Location**: `src/Configuration/Sources/`
 
 #### 1. IRabbitMqConfigurationSource
 ```csharp
@@ -230,12 +295,9 @@ public RabbitMqOptions Build()
 }
 ```
 
-**Key Points**:
-- Scalar properties (string, int) are overwritten
-- Collections (Exchanges, Queues) are merged by name
-- Later sources win for conflicts
-
 ### Builders
+
+**Location**: `src/Configuration/Builders/`
 
 #### RabbitMqOptionsBuilder
 Fluent API for connection and topology:
@@ -243,26 +305,9 @@ Fluent API for connection and topology:
 .UseHost("localhost")
 .UsePort(5672)
 .WithCredentials("user", "pass")
-.AddExchange(ex => ex.WithName("orders").AsTopic())
-.AddQueue(q => q.WithName("queue").Durable())
-.AddBinding(b => b.FromExchange("ex").ToQueue("q").WithRoutingKey("key"))
+.WithConnectionName("MyApp")
+.WithChannelPoolSize(20)
 ```
-
-#### ExchangeBuilder
-- Exchange types: Direct, Topic, Fanout, Headers
-- Durability and auto-delete
-- Custom arguments
-
-#### QueueBuilder
-- Durable, exclusive, auto-delete
-- Dead letter configuration
-- TTL, max length, overflow behavior
-- Queue types: Classic, Quorum, Stream, Lazy
-
-#### BindingBuilder
-- Exchange to queue bindings
-- Routing keys
-- Header arguments
 
 ---
 
@@ -270,21 +315,21 @@ Fluent API for connection and topology:
 
 ### Overview
 
-Topology management provides **automatic infrastructure provisioning** from message definitions.
+Topology management provides **automatic infrastructure provisioning** from handler discovery.
 
 ### Components
 
+**Location**: `src/Topology/`
+
 #### 1. ITopologyScanner
-Scans assemblies for:
-- Message types (ICommand, IEvent, IQuery)
-- Message handlers (IMessageHandler<T>)
-- Topology attributes
+Scans assemblies for handlers and message types:
 
 ```csharp
 public interface ITopologyScanner
 {
     IReadOnlyCollection<MessageTypeInfo> ScanForMessageTypes(params Assembly[] assemblies);
     IReadOnlyCollection<HandlerTypeInfo> ScanForHandlers(params Assembly[] assemblies);
+    IReadOnlyCollection<HandlerTopologyInfo> ScanForHandlerTopology(params Assembly[] assemblies);
 }
 ```
 
@@ -295,10 +340,10 @@ Generates names from message types:
 public interface ITopologyNamingConvention
 {
     string GetExchangeName(Type messageType);
-    string GetQueueName(Type messageType, string? serviceName);
+    string GetQueueName(Type messageType);
     string GetRoutingKey(Type messageType);
-    string GetDeadLetterExchangeName(Type messageType);
-    string GetDeadLetterQueueName(Type messageType, string? serviceName);
+    string GetDeadLetterExchangeName(string sourceQueueName);
+    string GetDeadLetterQueueName(string sourceQueueName);
 }
 ```
 
@@ -315,18 +360,6 @@ Thread-safe registry for topology metadata:
 - Binding rules
 - Routing key patterns
 
-```csharp
-public interface ITopologyRegistry
-{
-    void RegisterExchange(ExchangeDefinition definition);
-    void RegisterQueue(QueueDefinition definition);
-    void RegisterBinding(BindingDefinition definition);
-    ExchangeDefinition? GetExchange(string name);
-    QueueDefinition? GetQueue(string name);
-    IReadOnlyCollection<BindingDefinition> GetBindingsForQueue(string queueName);
-}
-```
-
 #### 4. ITopologyProvider
 Provides topology from message types:
 
@@ -336,12 +369,6 @@ public interface ITopologyProvider
     TopologyMetadata GetTopologyForMessage(Type messageType);
 }
 ```
-
-**ConventionBasedTopologyProvider**:
-1. Check attributes on message type
-2. Apply naming conventions
-3. Apply default policies
-4. Return complete topology metadata
 
 #### 5. ITopologyDeclarer
 Declares topology on RabbitMQ:
@@ -357,6 +384,18 @@ public interface ITopologyDeclarer
 ```
 
 ### Topology Attributes
+
+**Location**: `src/Topology/Attributes/`
+
+#### ConsumerQueueAttribute (Handler-level)
+```csharp
+[ConsumerQueue(
+    Name = "custom-queue",
+    QueueType = QueueType.Quorum,
+    PrefetchCount = 20,
+    MaxConcurrency = 5)]
+public class MyHandler : IMessageHandler<MyEvent> { }
+```
 
 #### MessageAttribute
 ```csharp
@@ -388,19 +427,6 @@ public class OrderCreatedEvent : Event { }
 public class OrderCreatedEvent : Event { }
 ```
 
-#### RetryPolicyAttribute
-```csharp
-[RetryPolicy(MaxRetries = 5, InitialDelayMs = 2000)]
-public class OrderCreatedEvent : Event { }
-```
-
-#### BindingAttribute
-```csharp
-[Binding("orders.*.created")]
-[Binding("orders.*.updated")]
-public class OrderEvent : Event { }
-```
-
 ### Topology Auto-Discovery Flow
 
 ```
@@ -408,54 +434,45 @@ Application Start
     ?
 TopologyInitializationHostedService
     ?
-Scan Assemblies ? MessageTypeInfo[]
+TopologyScanner.ScanForHandlerTopology()
     ?
-For Each Message Type:
-    Check Attributes ? Apply Conventions ? Build Topology Metadata
+For Each Handler Found:
+    ??? Register Handler in DI (scoped)
+    ??? Create HandlerInvoker<TMessage>
+    ??? Register in HandlerInvokerRegistry
+    ??? Register Message Type for Serialization
+    ??? Register ConsumerRegistration
     ?
-Register in TopologyRegistry
+Build TopologyDefinitions from Handler + Message Attributes
     ?
-Declare on RabbitMQ via TopologyDeclarer
+TopologyDeclarer.DeclareAsync() ? RabbitMQ
     ?
-Ready for Publishing/Consuming
+TopologyReadySignal.SetReady()
+    ?
+ConsumerHostedService Starts Consumers
+    ?
+Ready for Message Processing
 ```
 
-### Topology Configuration Patterns
+### TopologyBuilder (Fluent API)
 
-#### Pattern 1: Full Auto-Discovery
+**Location**: `src/Topology/Builders/TopologyBuilder.cs`
+
 ```csharp
-services.AddRabbitMqMessaging(...)
+services.AddRabbitMqMessaging(config)
     .AddTopology(topology => topology
         .WithServiceName("order-service")
-        .ScanAssemblyContaining<OrderCreatedEvent>());
-```
-
-#### Pattern 2: Convention Override
-```csharp
-.AddTopology(topology => topology
-    .ConfigureNaming(naming =>
-    {
-        naming.UseLowerCase = true;
-        naming.EventExchangePrefix = "events.";
-    })
-    .ScanAssemblyContaining<OrderCreatedEvent>());
-```
-
-#### Pattern 3: Attribute-Based
-```csharp
-[Exchange("custom-exchange")]
-[Queue("custom-queue")]
-[RoutingKey("custom.routing.key")]
-public class MyEvent : Event { }
-```
-
-#### Pattern 4: Fluent Override
-```csharp
-.AddTopology(topology => topology
-    .ScanAssemblyContaining<OrderCreatedEvent>()
-    .AddTopology<OrderCreatedEvent>(msg => msg
-        .WithExchangeName("override-exchange")
-        .WithQueueName("override-queue")));
+        .WithDeadLetterEnabled(true)
+        .ConfigureNaming(naming =>
+        {
+            naming.UseLowerCase = true;
+            naming.EventExchangePrefix = "events.";
+        })
+        .ConfigureProvider(provider =>
+        {
+            provider.DefaultDurable = true;
+        })
+        .ScanAssemblyContaining<OrderCreatedHandler>());
 ```
 
 ---
@@ -463,6 +480,8 @@ public class MyEvent : Event { }
 ## Message Pipeline
 
 ### Publisher Pipeline
+
+**Location**: `src/Publishing/Middleware/`
 
 **Interface**: `IPublishMiddleware`
 
@@ -485,10 +504,12 @@ public interface IPublishMiddleware
 IMessagePublisher.PublishAsync()
     ? LoggingMiddleware
         ? SerializationMiddleware
-            ? RabbitMqPublisher (actual publish)
+            ? RabbitMqPublisher.PublishToRabbitMqAsync()
 ```
 
 ### Consumer Pipeline
+
+**Location**: `src/Consuming/Middleware/`
 
 **Interface**: `IConsumeMiddleware`
 
@@ -552,9 +573,9 @@ services.AddSingleton<IPublishMiddleware, MetricsMiddleware>();
 
 ## Resilience Patterns
 
-### 1. Retry Policy
+**Location**: `src/Resilience/`
 
-**Location**: `Resilience/RetryPolicy.cs`
+### 1. Retry Policy
 
 **Implementation**: Polly-based retry with:
 - Exponential backoff
@@ -573,14 +594,9 @@ services.ConfigureRetry(retry =>
 });
 ```
 
-**Algorithm**:
-```
-Delay = Min(InitialDelay * 2^attempt, MaxDelay) + Jitter
-```
-
 ### 2. Circuit Breaker
 
-**Location**: `Resilience/CircuitBreaker.cs`
+**Location**: `src/Resilience/CircuitBreaker/`
 
 **States**: Closed ? Open ? Half-Open ? Closed
 
@@ -594,31 +610,17 @@ services.AddCircuitBreaker(cb =>
 });
 ```
 
-**State Transitions**:
-- **Closed**: Normal operation
-- **Open**: Failures exceeded threshold, fail fast
-- **Half-Open**: Test if service recovered
-- **Closed**: Service recovered
-
 ### 3. Dead Letter Handling
 
-**Location**: `Resilience/DeadLetterHandler.cs`
-
-**Features**:
-- Automatic DLX configuration
+Automatic DLX configuration via topology:
 - Retry exhausted messages
-- Message inspection
 - Poison message isolation
-
-**Queue Arguments**:
-```csharp
-"x-dead-letter-exchange" = "dlx-exchange"
-"x-dead-letter-routing-key" = "failed.{original-routing-key}"
-```
 
 ---
 
 ## Outbox Pattern
+
+**Location**: `src/Persistence/`
 
 ### Architecture
 
@@ -653,7 +655,7 @@ public class OutboxMessage
     public string MessageType { get; set; }
     public byte[] Payload { get; set; }
     public string? RoutingKey { get; set; }
-    public string? Exchange { get; set; }
+    public string? ExchangeName { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? ProcessedAt { get; set; }
     public int RetryCount { get; set; }
@@ -662,19 +664,7 @@ public class OutboxMessage
 ```
 
 #### 3. OutboxPublisher
-Scoped service for transactional publishing:
-```csharp
-public class OutboxPublisher
-{
-    public async Task PublishAsync<TMessage>(TMessage message, CancellationToken ct)
-        where TMessage : IMessage
-    {
-        var outboxMessage = CreateOutboxMessage(message);
-        await _repository.AddAsync(outboxMessage, ct);
-        // Message published when DbContext.SaveChanges() is called
-    }
-}
-```
+Scoped service for transactional publishing.
 
 #### 4. OutboxProcessor
 Background hosted service:
@@ -683,43 +673,18 @@ Background hosted service:
 - Updates processed status
 - Handles failures with retry
 
-```csharp
-services.AddOutboxPattern<AppDbContext>(options =>
-{
-    options.ProcessingInterval = TimeSpan.FromSeconds(5);
-    options.BatchSize = 100;
-    options.RetentionPeriod = TimeSpan.FromDays(7);
-});
-```
-
-### Inbox Pattern (Idempotency)
-
-**InboxMessage** tracks processed messages:
-```csharp
-public class InboxMessage
-{
-    public Guid MessageId { get; set; }
-    public DateTime ProcessedAt { get; set; }
-}
-```
-
-**IdempotencyMiddleware**:
-1. Check if message ID exists in inbox
-2. If exists, skip processing (already handled)
-3. If not, process and add to inbox
-4. Ensures exactly-once semantics
-
 ---
 
 ## Connection Management
 
-### RabbitMqConnectionPool
+**Location**: `src/Connection/`
 
-**Location**: `Connection/RabbitMqConnectionPool.cs`
+### RabbitMqConnectionPool
 
 **Features**:
 - Single connection per application
 - Channel pooling for concurrency
+- Dedicated channels for consumers
 - Automatic reconnection
 - Thread-safe channel management
 
@@ -730,10 +695,8 @@ Application
 RabbitMqConnectionPool
     ??? IConnection (singleton)
     ??? Channel Pool
-        ??? Channel 1
-        ??? Channel 2
-        ??? ...
-        ??? Channel N
+        ??? Pooled Channels (for publishing)
+        ??? Dedicated Channels (for consumers)
 ```
 
 **Key Methods**:
@@ -742,28 +705,11 @@ public interface IRabbitMqConnectionPool
 {
     Task<IChannel> GetChannelAsync(CancellationToken ct);
     void ReturnChannel(IChannel channel);
+    Task<IChannel> CreateDedicatedChannelAsync(CancellationToken ct);
     Task EnsureConnectedAsync(CancellationToken ct);
     ValueTask DisposeAsync();
 }
 ```
-
-**Channel Lifecycle**:
-1. Request channel from pool
-2. Use for publish/consume
-3. Return to pool (don't dispose!)
-4. Pool manages channel lifecycle
-
-**Configuration**:
-```csharp
-.WithChannelPoolSize(20) // Number of pooled channels
-```
-
-### Connection Recovery
-
-- Automatic reconnection on failure
-- Network recovery interval
-- Event handlers for connection state
-- Graceful degradation
 
 ---
 
@@ -791,15 +737,8 @@ Implement `IMessageSerializer`:
 ```csharp
 public class ProtobufSerializer : IMessageSerializer
 {
-    public byte[] Serialize<T>(T message) where T : IMessage
-    {
-        // Protobuf serialization
-    }
-    
-    public T Deserialize<T>(byte[] data) where T : IMessage
-    {
-        // Protobuf deserialization
-    }
+    public byte[] Serialize<T>(T message) where T : IMessage { }
+    public T Deserialize<T>(byte[] data) where T : IMessage { }
 }
 
 services.AddSingleton<IMessageSerializer, ProtobufSerializer>();
@@ -831,12 +770,8 @@ Implement `IMessageTypeResolver`:
 ```csharp
 public class CustomTypeResolver : IMessageTypeResolver
 {
-    public void RegisterType<T>() where T : IMessage { }
-    
-    public Type? ResolveType(string messageType)
-    {
-        // Custom type resolution logic
-    }
+    public void RegisterType(Type messageType) { }
+    public Type? ResolveType(string messageType) { }
 }
 ```
 
@@ -844,17 +779,27 @@ public class CustomTypeResolver : IMessageTypeResolver
 
 ## Performance Considerations
 
-### 1. Channel Pooling
-- Channels are expensive to create
-- Pool size = expected concurrent operations
-- Default: 10, increase for high concurrency
+### 1. Handler Invoker Pattern
+- O(1) lookup via `ConcurrentDictionary`
+- Reflection only at startup
+- Strongly-typed invocation (no `MethodInfo.Invoke`)
 
-### 2. Prefetch Count
+### 2. Channel Pooling
+- Channels are expensive to create
+- Pooled channels for publishing
+- Dedicated channels for consumers
+
+### 3. Prefetch Count
 - Controls how many messages are buffered
 - Higher = better throughput, higher memory
 - Lower = better distribution, lower latency
 
-### 3. Queue Types
+### 4. Concurrency Control
+- `SemaphoreSlim` in `RabbitMqConsumer`
+- Configurable via `MaxConcurrency`
+- Prevents resource exhaustion
+
+### 5. Queue Types
 
 | Type | Use Case | Pros | Cons |
 |------|----------|------|------|
@@ -862,16 +807,6 @@ public class CustomTypeResolver : IMessageTypeResolver
 | Quorum | High availability | Replicated, consistent | Higher resource usage |
 | Stream | High throughput | Fast, scalable | Limited features |
 | Lazy | Large queues | Memory efficient | Slower access |
-
-### 4. Serialization
-- JSON is default (human-readable)
-- Consider MessagePack/Protobuf for performance
-- Trade-off: speed vs debuggability
-
-### 5. Batch Processing
-- Outbox processor uses batching
-- Consumers use prefetch for batching
-- Balance batch size with latency requirements
 
 ---
 
@@ -916,11 +851,6 @@ public class RabbitMqTests : IAsyncLifetime
 }
 ```
 
-### 3. Outbox Testing
-- Use in-memory database for fast tests
-- Verify transactional behavior
-- Test retry scenarios
-
 ---
 
 ## Best Practices
@@ -950,10 +880,10 @@ public class RabbitMqTests : IAsyncLifetime
 - Alert on high failure rates
 
 ### 5. Topology Management
-- Use auto-discovery in development
+- Use handler-based auto-discovery
 - Review generated topology before production
 - Document custom configurations
-- Version your topology changes
+- Use `[ConsumerQueue]` for performance tuning
 
 ### 6. Performance
 - Tune prefetch count per queue
@@ -961,139 +891,4 @@ public class RabbitMqTests : IAsyncLifetime
 - Use appropriate queue types
 - Scale consumers horizontally
 
-### 7. Monitoring
-- Enable health checks
-- Track message processing time
-- Monitor connection state
-- Alert on queue buildup
-
 ---
-
-## Migration Guide
-
-### From Manual Configuration to Topology Auto-Discovery
-
-**Before**:
-```csharp
-services.AddRabbitMqMessaging(options => options
-    .AddExchange(ex => ex.WithName("orders").AsTopic())
-    .AddQueue(q => q.WithName("order-events").Durable())
-    .AddBinding(b => b.FromExchange("orders").ToQueue("order-events")));
-```
-
-**After**:
-```csharp
-services.AddRabbitMqMessaging(options => options.UseHost("localhost"))
-    .AddTopology(topology => topology
-        .WithServiceName("order-service")
-        .ScanAssemblyContaining<OrderCreatedEvent>());
-```
-
-### Adding Attributes to Existing Messages
-
-```csharp
-// Add attributes incrementally
-[Exchange("orders-exchange")] // Step 1: Add exchange
-public class OrderCreatedEvent : Event
-{
-    // Properties
-}
-
-[Exchange("orders-exchange")]
-[Queue("orders-queue", QueueType = QueueType.Quorum)] // Step 2: Add queue
-public class OrderCreatedEvent : Event { }
-
-[Exchange("orders-exchange")]
-[Queue("orders-queue", QueueType = QueueType.Quorum)]
-[DeadLetter(Enabled = true)] // Step 3: Add dead letter
-public class OrderCreatedEvent : Event { }
-```
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-#### 1. Messages Not Being Consumed
-- Check consumer is registered: `.AddConsumer("queue-name")`
-- Verify handler is registered: `.AddHandler<Handler, Message>()`
-- Check queue binding and routing key
-- Verify message type resolution
-
-#### 2. Topology Not Created
-- Ensure `RabbitMqHostedService` is running
-- Check logs for topology declaration errors
-- Verify connection to RabbitMQ
-- Check permissions on RabbitMQ user
-
-#### 3. Outbox Messages Not Processing
-- Verify `OutboxProcessor` is registered
-- Check database connection
-- Review processing interval setting
-- Check for errors in outbox table
-
-#### 4. Connection Issues
-- Verify hostname and port
-- Check credentials
-- Review firewall rules
-- Enable connection logging
-
-### Debug Logging
-
-Enable detailed logging:
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "AsyncronousComunication": "Debug"
-    }
-  }
-}
-```
-
----
-
-## Appendix: Complete Service Registration
-
-```csharp
-services.AddRabbitMqMessaging(builder.Configuration, options => options
-    .WithConnectionName("MyApp")
-    .WithChannelPoolSize(20))
-    
-    // Topology auto-discovery
-    .AddTopology(topology => topology
-        .WithServiceName("my-service")
-        .WithDeadLetterEnabled(true)
-        .ScanAssemblyContaining<MyEvent>())
-    
-    // Handlers
-    .AddHandler<OrderCreatedHandler, OrderCreatedEvent>()
-    .AddHandler<PaymentProcessedHandler, PaymentProcessedEvent>()
-    
-    // Consumers
-    .AddConsumer("order-events", opt => opt.PrefetchCount = 10)
-    .AddConsumer("payment-events", opt => opt.PrefetchCount = 20)
-    
-    // Outbox pattern
-    .AddOutboxPattern<AppDbContext>(outbox =>
-    {
-        outbox.ProcessingInterval = TimeSpan.FromSeconds(5);
-        outbox.BatchSize = 100;
-    })
-    
-    // Resilience
-    .ConfigureRetry(retry =>
-    {
-        retry.MaxRetryAttempts = 5;
-        retry.UseExponentialBackoff = true;
-    })
-    .AddCircuitBreaker(cb =>
-    {
-        cb.FailureRateThreshold = 0.5;
-        cb.DurationOfBreak = TimeSpan.FromSeconds(30);
-    })
-    
-    // Health checks
-    .AddHealthChecks();
-```

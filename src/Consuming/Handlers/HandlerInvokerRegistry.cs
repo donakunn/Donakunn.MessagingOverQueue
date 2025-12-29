@@ -1,4 +1,3 @@
-using MessagingOverQueue.src.Abstractions.Consuming;
 using MessagingOverQueue.src.Abstractions.Messages;
 using System.Collections.Concurrent;
 
@@ -28,10 +27,16 @@ public interface IHandlerInvokerRegistry
     /// </summary>
     /// <param name="messageType">The message type.</param>
     bool IsRegistered(Type messageType);
+
+    /// <summary>
+    /// Gets all registered message types.
+    /// </summary>
+    IEnumerable<Type> GetRegisteredMessageTypes();
 }
 
 /// <summary>
 /// Thread-safe implementation of handler invoker registry.
+/// Uses a concurrent dictionary for O(1) lookups during message processing.
 /// </summary>
 public sealed class HandlerInvokerRegistry : IHandlerInvokerRegistry
 {
@@ -56,5 +61,11 @@ public sealed class HandlerInvokerRegistry : IHandlerInvokerRegistry
     {
         ArgumentNullException.ThrowIfNull(messageType);
         return _invokers.ContainsKey(messageType);
+    }
+
+    /// <inheritdoc />
+    public IEnumerable<Type> GetRegisteredMessageTypes()
+    {
+        return _invokers.Keys;
     }
 }

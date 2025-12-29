@@ -1,6 +1,6 @@
-# MessagingOverQueue - RabbitMQ Messaging Library
+# MessagingOverQueue - RabbitMQ Messaging Library for .NET
 
-A robust, high-performance asynchronous messaging library for .NET built on RabbitMQ with automatic handler-based topology discovery and SOLID design principles.
+A robust, high-performance asynchronous messaging library for .NET 10 built on RabbitMQ with automatic handler-based topology discovery and SOLID design principles.
 
 ## Introduction
 
@@ -15,7 +15,7 @@ Traditional RabbitMQ integration requires significant boilerplate: manual exchan
 - **Registers handlers in DI** with scoped lifetime management
 - **Sets up consumers** with optimized concurrency and prefetch settings
 - **Dispatches messages** using reflection-free, strongly-typed handler invocation
-- **Manages connections** with pooling and automatic reconnection
+- **Manages connections** with pooling and automatic recovery
 
 ### Architecture Highlights
 
@@ -36,8 +36,6 @@ Traditional RabbitMQ integration requires significant boilerplate: manual exchan
 - **Event Sourcing**: Publishing domain events with reliable delivery guarantees
 - **Integration Patterns**: Message routing, pub/sub, request/reply, scatter-gather
 - **High-Throughput Systems**: Optimized for concurrent message processing with configurable prefetch and parallelism
-
-Whether you're building a new microservices architecture or modernizing an existing monolith, MessagingOverQueue provides the foundation for reliable, scalable messaging with minimal configuration.
 
 ---
 
@@ -66,7 +64,7 @@ dotnet add package MessagingOverQueue
 ### 1. Define Your Messages
 
 ```csharp
-using MessagingOverQueue.Abstractions.Messages;
+using MessagingOverQueue.src.Abstractions.Messages;
 
 // Event - can be consumed by multiple subscribers
 public class OrderCreatedEvent : Event
@@ -80,14 +78,14 @@ public class OrderCreatedEvent : Event
 public class CreateOrderCommand : Command
 {
     public string CustomerId { get; init; } = string.Empty;
-    public List<OrderItem> Items { get; init; } = new();
+    public List<OrderItem> Items { get; init; } = [];
 }
 ```
 
 ### 2. Create Message Handlers
 
 ```csharp
-using MessagingOverQueue.Abstractions.Consuming;
+using MessagingOverQueue.src.Abstractions.Consuming;
 
 public class OrderCreatedHandler : IMessageHandler<OrderCreatedEvent>
 {
@@ -112,6 +110,9 @@ public class OrderCreatedHandler : IMessageHandler<OrderCreatedEvent>
 ### 3. Configure Services (Handler-Based Auto-Discovery)
 
 ```csharp
+using MessagingOverQueue.src.DependencyInjection;
+using MessagingOverQueue.src.Topology.DependencyInjection;
+
 services.AddRabbitMqMessaging(builder.Configuration)
     .AddTopology(topology => topology
         .WithServiceName("order-service")
@@ -138,7 +139,7 @@ The library's primary auto-discovery mode scans for message handlers rather than
 
 ### Handler Architecture & Registration
 
-MessagingOverQueue uses a sophisticated **handler invoker pattern** to eliminate reflection overhead during message processing. Here's how it works:
+MessagingOverQueue uses a sophisticated **handler invoker pattern** to eliminate reflection overhead during message processing.
 
 #### Registration Phase (Startup)
 
@@ -159,7 +160,7 @@ services.AddRabbitMqMessaging(builder.Configuration)
 // 1. Finds: OrderCreatedHandler : IMessageHandler<OrderCreatedEvent>
 // 2. Registers: services.AddScoped<IMessageHandler<OrderCreatedEvent>, OrderCreatedHandler>()
 // 3. Creates: var invoker = new HandlerInvoker<OrderCreatedEvent>()
-// 4. Caches: registry.Register(typeof(OrderCreatedEvent), invoker)
+// 4. Caches: registry.Register(invoker)
 // 5. Sets up consumer for "order-service.order-created" queue
 ```
 
@@ -236,7 +237,7 @@ public class OrderCreatedHandler : IMessageHandler<OrderCreatedEvent>
 **Generated Topology:**
 - Exchange: `events.order-created` (topic, durable)
 - Queue: `{service-name}.order-created` (durable)
-- Routing Key: `orders.order.created`
+- Routing Key: `{category}.order.created`
 - Consumer: Auto-registered with default settings
 
 ### Handler with Custom Queue Configuration
@@ -244,6 +245,8 @@ public class OrderCreatedHandler : IMessageHandler<OrderCreatedEvent>
 Use `[ConsumerQueue]` attribute to customize the consumer's queue:
 
 ```csharp
+using MessagingOverQueue.src.Topology.Attributes;
+
 [ConsumerQueue(
     Name = "critical-payments",
     QueueType = QueueType.Quorum,
@@ -337,41 +340,6 @@ public class OrderedHandler : IMessageHandler<SequentialEvent>
 }
 ```
 
-#### Concurrency Control Implementation
-
-The `RabbitMqConsumer` uses a `SemaphoreSlim` to control concurrent execution:
-
-```csharp
-// Inside RabbitMqConsumer
-private readonly SemaphoreSlim _concurrencySemaphore = new(options.MaxConcurrency, options.MaxConcurrency);
-
-private async Task OnMessageReceivedAsync(object sender, BasicDeliverEventArgs args)
-{
-    // Wait for available slot (blocks if MaxConcurrency reached)
-    await _concurrencySemaphore.WaitAsync(_stoppingCts.Token);
-    
-    try
-    {
-        // Set timeout for handler execution
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
-        cts.CancelAfter(options.ProcessingTimeout);
-        
-        await ProcessMessageAsync(args, cts.Token);
-    }
-    finally
-    {
-        // Release slot for next message
-        _concurrencySemaphore.Release();
-    }
-}
-```
-
-**Key Behaviors:**
-- Messages are acknowledged/rejected individually (no batch ack)
-- Unhandled exceptions trigger `BasicNack` with configurable requeue
-- Processing timeout cancels handler and requeues message
-- Graceful shutdown waits for in-flight messages to complete
-
 ## Configuration Options
 
 ### Option A: Handler-Based Auto-Discovery (Recommended)
@@ -389,6 +357,8 @@ services.AddRabbitMqMessaging(builder.Configuration)
 Add attributes to message classes for fine-grained control:
 
 ```csharp
+using MessagingOverQueue.src.Topology.Attributes;
+
 [Exchange("payments-exchange", Type = ExchangeType.Topic)]
 [Queue("payment-processed-queue", QueueType = QueueType.Quorum)]
 [RoutingKey("payments.processed")]
@@ -443,24 +413,20 @@ services.AddRabbitMqMessaging(builder.Configuration);
 services.AddRabbitMqMessagingFromAspire(builder.Configuration);
 ```
 
-### Option F: Legacy Message-Type Discovery
-
-For backward compatibility, you can use the old message-type scanning:
+### Option F: Combined Configuration Sources
 
 ```csharp
-services.AddRabbitMqMessaging(builder.Configuration)
-    .AddTopology(topology => topology
-        .WithServiceName("legacy-service")
-        .UseMessageTypeDiscovery()  // Use old behavior
-        .ScanAssemblyContaining<OrderCreatedEvent>())
-    // With legacy mode, manually register handlers and consumers
-    .AddHandler<OrderCreatedHandler, OrderCreatedEvent>()
-    .AddConsumer("legacy-service.order-created");
+// appsettings.json provides base config, fluent API overrides
+services.AddRabbitMqMessaging(
+    builder.Configuration,
+    options => options.WithConnectionName("MyApp"));
 ```
 
 ## Publishing Messages
 
 ```csharp
+using MessagingOverQueue.src.Abstractions.Publishing;
+
 public class OrderController : ControllerBase
 {
     private readonly ICommandSender _commandSender;
@@ -571,6 +537,9 @@ Ensure messages are published reliably within database transactions.
 ### 1. Configure Your DbContext
 
 ```csharp
+using MessagingOverQueue.src.Persistence;
+using MessagingOverQueue.src.Persistence.Entities;
+
 public class AppDbContext : DbContext, IOutboxDbContext
 {
     public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
@@ -578,7 +547,7 @@ public class AppDbContext : DbContext, IOutboxDbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ConfigureOutbox();
+        // Configure outbox entities
     }
 }
 ```
@@ -600,6 +569,8 @@ services.AddRabbitMqMessaging(builder.Configuration)
 ### 3. Use Transactional Publishing
 
 ```csharp
+using MessagingOverQueue.src.Persistence;
+
 public class OrderService
 {
     private readonly AppDbContext _context;
@@ -697,8 +668,6 @@ public async Task HandleAsync(MyEvent message, IMessageContext context, Cancella
 
 ## Handler Registration Methods
 
-MessagingOverQueue supports multiple approaches for registering handlers:
-
 ### Automatic Registration (Recommended)
 
 Scans assemblies and automatically registers all handlers:
@@ -729,34 +698,6 @@ services.AddRabbitMqMessaging(builder.Configuration)
         opt.PrefetchCount = 20;
         opt.MaxConcurrency = 5;
     });
-
-// This approach:
-// ✅ Explicitly declares which handlers are active
-// ✅ Allows conditional registration (e.g., feature flags)
-// ✅ Supports multiple handlers per message type
-// ❌ Requires manual consumer configuration
-```
-
-### Hybrid Approach
-
-Combine auto-discovery with manual overrides:
-
-```csharp
-services.AddRabbitMqMessaging(builder.Configuration)
-    .AddTopology(topology => topology
-        .WithServiceName("my-service")
-        .ScanAssemblyContaining<OrderCreatedHandler>())  // Auto-discover
-    
-    // Override specific handler configuration
-    .AddHandler<CriticalPaymentHandler, PaymentEvent>()  // Additional handler
-    
-    // Customize consumer for specific queue
-    .AddConsumer("my-service.critical-payments", opt =>
-    {
-        opt.PrefetchCount = 100;
-        opt.MaxConcurrency = 20;
-        opt.ProcessingTimeout = TimeSpan.FromMinutes(5);
-    });
 ```
 
 ### Multiple Handlers for Same Message
@@ -773,37 +714,6 @@ services.AddRabbitMqMessaging(builder.Configuration)
 // 1. HandlerInvoker<OrderCreatedEvent> resolves ALL handlers from DI
 // 2. Executes them sequentially in registration order
 // 3. All handlers must succeed for message acknowledgment
-
-public class EmailNotificationHandler : IMessageHandler<OrderCreatedEvent>
-{
-    public async Task HandleAsync(OrderCreatedEvent message, IMessageContext context, CancellationToken ct)
-    {
-        // Send email notification
-    }
-}
-
-public class AuditLoggingHandler : IMessageHandler<OrderCreatedEvent>
-{
-    public async Task HandleAsync(OrderCreatedEvent message, IMessageContext context, CancellationToken ct)
-    {
-        // Log to audit system
-    }
-}
-```
-
-**Handler Execution:**
-```csharp
-// Inside HandlerInvoker<TMessage>
-public async Task InvokeAsync(IServiceProvider serviceProvider, IMessage message, ...)
-{
-    // Resolves ALL registered handlers for this message type
-    var handlers = serviceProvider.GetServices<IMessageHandler<TMessage>>();
-    
-    foreach (var handler in handlers)
-    {
-        await handler.HandleAsync((TMessage)message, context, cancellationToken);
-    }
-}
 ```
 
 ## Complete Registration Example
@@ -823,17 +733,6 @@ services.AddRabbitMqMessaging(builder.Configuration, options => options
             provider.DefaultDurable = true;
             provider.EnableDeadLetterByDefault = true;
         }))
-    
-    // Optional: Manual handler registration for critical handlers
-    .AddHandler<CriticalEventHandler, CriticalEvent>()
-    
-    // Optional: Customize consumer settings for specific queues
-    .AddConsumer("my-service.critical-events", opt =>
-    {
-        opt.PrefetchCount = 50;
-        opt.MaxConcurrency = 10;
-        opt.ProcessingTimeout = TimeSpan.FromMinutes(5);
-    })
     
     // Add outbox pattern
     .AddOutboxPattern<AppDbContext>(outbox =>
@@ -856,171 +755,43 @@ services.AddRabbitMqMessaging(builder.Configuration, options => options
     
     // Add health checks
     .AddHealthChecks();
-
-// Result: Complete messaging infrastructure with:
-// ✅ Handler auto-discovery and registration
-// ✅ Reflection-free message dispatch
-// ✅ Automatic topology creation
-// ✅ Optimized consumer configuration
-// ✅ Transactional outbox pattern
-// ✅ Resilience policies
-// ✅ Health monitoring
 ```
 
-## Migration from Message-Type Discovery
-
-If you're upgrading from the legacy message-type discovery:
-
-**Before (Legacy):**
-```csharp
-services.AddRabbitMqMessaging(config)
-    .AddTopology(topology => topology
-        .WithServiceName("order-service")
-        .ScanAssemblyContaining<OrderCreatedEvent>())  // Scans messages
-    .AddHandler<OrderCreatedHandler, OrderCreatedEvent>()  // Manual handler
-    .AddConsumer("order-service.order-created");  // Manual consumer
-```
-
-**After (Handler-Based):**
-```csharp
-services.AddRabbitMqMessaging(config)
-    .AddTopology(topology => topology
-        .WithServiceName("order-service")
-        .ScanAssemblyContaining<OrderCreatedHandler>());  // Scans handlers - that's all!
-```
-
-## Advanced Topics
-
-### Handler Invoker Internals
-
-For developers interested in the low-level architecture, here's how the reflection-free handler dispatch works:
-
-#### IHandlerInvoker Interface
-
-```csharp
-public interface IHandlerInvoker
-{
-    Type MessageType { get; }
-    
-    Task InvokeAsync(
-        IServiceProvider serviceProvider,
-        IMessage message,
-        IMessageContext context,
-        CancellationToken cancellationToken);
-}
-```
-
-#### HandlerInvoker<TMessage> Implementation
-
-```csharp
-internal sealed class HandlerInvoker<TMessage> : IHandlerInvoker
-    where TMessage : IMessage
-{
-    public Type MessageType => typeof(TMessage);
-
-    public async Task InvokeAsync(
-        IServiceProvider serviceProvider,
-        IMessage message,
-        IMessageContext context,
-        CancellationToken cancellationToken)
-    {
-        // Resolve ALL handlers for this message type (supports multiple handlers)
-        var handlers = serviceProvider.GetServices<IMessageHandler<TMessage>>();
-
-        foreach (var handler in handlers)
-        {
-            // Strongly-typed call - no reflection, no boxing
-            await handler.HandleAsync((TMessage)message, context, cancellationToken);
-        }
-    }
-}
-```
-
-#### Handler Invoker Registry
-
-```csharp
-public sealed class HandlerInvokerRegistry : IHandlerInvokerRegistry
-{
-    private readonly ConcurrentDictionary<Type, IHandlerInvoker> _invokers = new();
-
-    public IHandlerInvoker? GetInvoker(Type messageType)
-    {
-        return _invokers.TryGetValue(messageType, out var invoker) ? invoker : null;
-    }
-
-    public void Register(IHandlerInvoker invoker)
-    {
-        _invokers.TryAdd(invoker.MessageType, invoker);
-    }
-
-    public bool IsRegistered(Type messageType)
-    {
-        return _invokers.ContainsKey(messageType);
-    }
-}
-```
-
-**Why This Design?**
-
-1. **Performance**: O(1) lookup, zero reflection after startup
-2. **Type Safety**: Compile-time verification of handler signatures
-3. **Multiple Handlers**: Naturally supports multiple handlers per message
-4. **Testability**: Easy to mock `IHandlerInvoker` for testing
-5. **Extensibility**: Can create custom invokers with different behavior (e.g., retry logic, circuit breakers)
-
-#### Handler Invoker Factory
-
-```csharp
-public sealed class HandlerInvokerFactory : IHandlerInvokerFactory
-{
-    private static readonly Type HandlerInvokerOpenGeneric = typeof(HandlerInvoker<>);
-
-    public IHandlerInvoker Create(Type messageType)
-    {
-        // This reflection happens ONCE at startup, not per-message
-        var invokerType = HandlerInvokerOpenGeneric.MakeGenericType(messageType);
-        return (IHandlerInvoker)Activator.CreateInstance(invokerType)!;
-    }
-}
-```
-
-### Startup Registration Flow
-
-Understanding the complete registration flow helps with troubleshooting:
+## Project Structure
 
 ```
-1. Application Startup
-   ↓
-2. AddRabbitMqMessaging() - Registers core services
-   ↓
-3. AddTopology() - Configures topology builder
-   ↓
-4. TopologyInitializationHostedService starts
-   ↓
-5. TopologyScanner.ScanForHandlerTopology()
-   - Finds: IMessageHandler<T> implementations
-   - Extracts: MessageType, HandlerType, ConsumerQueueAttribute
-   ↓
-6. For each handler found:
-   a. Register in DI: services.AddScoped<IMessageHandler<T>, THandler>()
-   b. Create invoker: factory.Create(typeof(T))
-   c. Cache invoker: registry.Register(invoker)
-   d. Register consumer: services.AddSingleton<ConsumerRegistration>()
-   e. Register message type: For serialization
-   ↓
-7. TopologyDeclarer.DeclareAsync()
-   - Creates exchanges, queues, bindings in RabbitMQ
-   ↓
-8. ConsumerHostedService starts
-   - Creates RabbitMqConsumer for each queue
-   - Consumers start receiving messages
-   ↓
-9. Message Processing (Runtime)
-   - Consumer receives message → Deserialize
-   - HandlerInvokerRegistry.GetInvoker(messageType) → O(1) lookup
-   - Create DI scope → Resolve IMessageHandler<T>
-   - invoker.InvokeAsync() → Strongly-typed call
-   - Acknowledge/Reject message
+MessagingOverQueue/
+├── src/
+│   ├── Abstractions/
+│   │   ├── Consuming/          # IMessageHandler, IMessageContext, IMessageConsumer
+│   │   ├── Messages/           # IMessage, IEvent, ICommand, IQuery, MessageBase
+│   │   ├── Publishing/         # IMessagePublisher, IEventPublisher, ICommandSender
+│   │   └── Serialization/      # IMessageSerializer, IMessageTypeResolver
+│   ├── Configuration/
+│   │   ├── Builders/           # RabbitMqOptionsBuilder, fluent builders
+│   │   ├── Options/            # RabbitMqOptions, ConsumerOptions, RetryOptions
+│   │   └── Sources/            # Configuration sources (Aspire, AppSettings, Fluent)
+│   ├── Connection/             # IRabbitMqConnectionPool, channel management
+│   ├── Consuming/
+│   │   ├── Handlers/           # HandlerInvokerRegistry, HandlerInvokerFactory
+│   │   └── Middleware/         # ConsumePipeline, DeserializationMiddleware
+│   ├── DependencyInjection/    # ServiceCollectionExtensions, IMessagingBuilder
+│   ├── HealthChecks/           # RabbitMqHealthCheck
+│   ├── Hosting/                # ConsumerHostedService, RabbitMqHostedService
+│   ├── Persistence/
+│   │   ├── Entities/           # OutboxMessage, InboxMessage
+│   │   └── Repositories/       # IOutboxRepository, IInboxRepository
+│   ├── Publishing/
+│   │   └── Middleware/         # PublishPipeline, SerializationMiddleware
+│   ├── Resilience/
+│   │   └── CircuitBreaker/     # ICircuitBreaker, PollyCircuitBreaker
+│   └── Topology/
+│       ├── Abstractions/       # ITopologyScanner, ITopologyRegistry, ITopologyProvider
+│       ├── Attributes/         # ConsumerQueueAttribute, ExchangeAttribute, etc.
+│       ├── Builders/           # TopologyBuilder, MessageTopologyBuilder
+│       ├── Conventions/        # DefaultTopologyNamingConvention
+│       └── DependencyInjection/# TopologyServiceCollectionExtensions
+└── Examples/                   # Configuration and topology examples
 ```
 
 ## Key Benefits
@@ -1043,9 +814,14 @@ Understanding the complete registration flow helps with troubleshooting:
 
 - **[README.md](README.md)** - This file - Quick start and usage guide
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Detailed architecture and design patterns
-- **Examples/** - Sample code and configuration examples
+- **[Examples/](Examples/)** - Sample code and configuration examples
+
+## Requirements
+
+- .NET 10 or later
+- RabbitMQ 3.8+ (for quorum queues and streams)
 
 ## License
 
-APACHE 2.0
+Apache 2.0
 
