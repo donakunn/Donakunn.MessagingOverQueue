@@ -1,6 +1,4 @@
-using Donakunn.MessagingOverQueue.Consuming.Middleware;
 using Donakunn.MessagingOverQueue.DependencyInjection;
-using Donakunn.MessagingOverQueue.Persistence;
 using Donakunn.MessagingOverQueue.Persistence.Entities;
 using Donakunn.MessagingOverQueue.Persistence.Repositories;
 using Donakunn.MessagingOverQueue.Topology.DependencyInjection;
@@ -67,7 +65,7 @@ public class IdempotencyIntegrationTests : IntegrationTestBase
         {
             var inboxRepository = scope.ServiceProvider.GetRequiredService<IInboxRepository>();
             var hasBeenProcessed = await inboxRepository.HasBeenProcessedAsync(testEvent.Id, handlerType);
-            
+
             Assert.True(hasBeenProcessed);
         }
     }
@@ -85,7 +83,7 @@ public class IdempotencyIntegrationTests : IntegrationTestBase
         {
             var inboxRepository = scope.ServiceProvider.GetRequiredService<IInboxRepository>();
             var hasBeenProcessed = await inboxRepository.HasBeenProcessedAsync(testEvent.Id, handlerType);
-            
+
             Assert.False(hasBeenProcessed);
         }
     }
@@ -110,10 +108,10 @@ public class IdempotencyIntegrationTests : IntegrationTestBase
         using (var scope = host.Services.CreateScope())
         {
             var inboxRepository = scope.ServiceProvider.GetRequiredService<IInboxRepository>();
-            
+
             var processedByA = await inboxRepository.HasBeenProcessedAsync(testEvent.Id, handlerTypeA);
             var processedByB = await inboxRepository.HasBeenProcessedAsync(testEvent.Id, handlerTypeB);
-            
+
             Assert.True(processedByA);
             Assert.False(processedByB);
         }
@@ -197,10 +195,10 @@ public class IdempotencyIntegrationTests : IntegrationTestBase
         using var host = await BuildHostWithIdempotency();
         var correlationId = Guid.NewGuid().ToString();
         var testEvent = new SimpleTestEvent { Value = "CorrelationTest" };
-        
+
         // Set correlation ID via reflection
         typeof(SimpleTestEvent).GetProperty("CorrelationId")?.SetValue(testEvent, correlationId);
-        
+
         var handlerType = "TestHandler";
 
         // Act
@@ -267,7 +265,7 @@ public class IdempotencyIntegrationTests : IntegrationTestBase
         {
             var inboxRepository = scope.ServiceProvider.GetRequiredService<IInboxRepository>();
             await inboxRepository.MarkAsProcessedAsync(
-                testEvent, 
+                testEvent,
                 typeof(IdempotentTestEventHandler).FullName!);
         }
 
@@ -350,7 +348,7 @@ public class IdempotencyIntegrationTests : IntegrationTestBase
         using (var scope = host.Services.CreateScope())
         {
             var publisher = scope.ServiceProvider.GetRequiredService<Donakunn.MessagingOverQueue.Abstractions.Publishing.IEventPublisher>();
-            
+
             await publisher.PublishAsync(testEvent);
             await publisher.PublishAsync(testEvent);
             await publisher.PublishAsync(testEvent);
@@ -383,14 +381,8 @@ public class IdempotencyIntegrationTests : IntegrationTestBase
             })
             .AddTopology(topology => topology
                 .WithServiceName("idempotency-test-service")
-                .ScanAssemblyContaining<IdempotentTestEventHandler>());
-
-            // Register inbox repository for idempotency
-            services.AddScoped<IInboxRepository, InboxRepository<TestDbContext>>();
-            
-            // Register idempotency middleware
-            services.AddScoped<IdempotencyMiddleware>();
-            services.AddScoped<IConsumeMiddleware>(sp => sp.GetRequiredService<IdempotencyMiddleware>());
+                .ScanAssemblyContaining<IdempotentTestEventHandler>())
+            .AddOutboxPattern<TestDbContext>();
         });
     }
 

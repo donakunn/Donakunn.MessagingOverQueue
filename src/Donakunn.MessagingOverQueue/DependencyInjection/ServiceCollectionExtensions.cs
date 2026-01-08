@@ -220,12 +220,18 @@ public static class ServiceCollectionExtensions
 
         // Register outbox repository
         services.AddScoped<IOutboxRepository, OutboxRepository<TContext>>();
+        // Register inbox repository for idempotency
+        services.AddScoped<IInboxRepository, InboxRepository<TContext>>();
 
         // Register outbox publisher as the default publisher for transactional scenarios
         services.AddScoped<OutboxPublisher>();
 
         // Register outbox processor
         services.AddHostedService<OutboxProcessor>();
+
+        // Register idempotency middleware
+        services.AddScoped<IdempotencyMiddleware>();
+        services.AddScoped<IConsumeMiddleware>(sp => sp.GetRequiredService<IdempotencyMiddleware>());
 
         return builder;
     }
@@ -339,14 +345,9 @@ public interface IMessagingBuilder
 /// <summary>
 /// Default implementation of IMessagingBuilder.
 /// </summary>
-internal sealed class MessagingBuilder : IMessagingBuilder
+internal sealed class MessagingBuilder(IServiceCollection services) : IMessagingBuilder
 {
-    public IServiceCollection Services { get; }
-
-    public MessagingBuilder(IServiceCollection services)
-    {
-        Services = services;
-    }
+    public IServiceCollection Services { get; } = services;
 }
 
 /// <summary>

@@ -11,19 +11,19 @@ public class SerializationMiddleware(IMessageSerializer serializer, ILogger<Seri
     public async Task InvokeAsync(PublishContext context, Func<PublishContext, CancellationToken, Task> next, CancellationToken cancellationToken)
     {
         logger.LogDebug("Serializing message {MessageId} of type {MessageType}",
-            context.Message.Id, context.MessageType.Name);
+            context.Message?.Id, context.MessageType?.Name);
 
-        context.Body = serializer.Serialize(context.Message, context.MessageType);
+        context.Body = serializer.Serialize(context.Message ?? new object(), context.MessageType ?? typeof(object));
         context.ContentType = serializer.ContentType;
 
-        context.Headers["message-type"] = context.Message.MessageType;
-        context.Headers["message-id"] = context.Message.Id.ToString();
-        context.Headers["timestamp"] = context.Message.Timestamp.ToString("O");
+        context.Headers["message-type"] = context.Message?.MessageType;
+        context.Headers["message-id"] = context.Message?.Id.ToString();
+        context.Headers["timestamp"] = context.Message?.Timestamp.ToString("O");
 
-        if (context.Message.CorrelationId != null)
+        if (context.Message?.CorrelationId != null)
             context.Headers["correlation-id"] = context.Message.CorrelationId;
 
-        if (context.Message.CausationId != null)
+        if (context.Message?.CausationId != null)
             context.Headers["causation-id"] = context.Message.CausationId;
 
         await next(context, cancellationToken);
