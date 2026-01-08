@@ -1,6 +1,6 @@
 using Donakunn.MessagingOverQueue.DependencyInjection;
 using Donakunn.MessagingOverQueue.Topology.Abstractions;
-using Donakunn.MessagingOverQueues.Topology.Builders;
+using Donakunn.MessagingOverQueue.Topology.Builders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

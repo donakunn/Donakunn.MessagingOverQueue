@@ -5,21 +5,26 @@ namespace Donakunn.MessagingOverQueue.Consuming.Middleware;
 
 /// <summary>
 /// Middleware that ensures idempotent message processing.
+/// Works in conjunction with <see cref="IdempotentHandlerInvoker{TMessage}"/> to provide per-handler idempotency.
 /// </summary>
-public class IdempotencyMiddleware : IConsumeMiddleware
+public class IdempotencyMiddleware(
+    IInboxRepository inboxRepository,
+    ILogger<IdempotencyMiddleware> logger) : IConsumeMiddleware
 {
-    private readonly IInboxRepository _inboxRepository;
-    private readonly ILogger<IdempotencyMiddleware> _logger;
+    /// <summary>
+    /// Key used to store the <see cref="IInboxRepository"/> in the context data.
+    /// </summary>
+    internal const string InboxRepositoryKey = "IdempotencyMiddleware.InboxRepository";
 
-    public IdempotencyMiddleware(
-        IInboxRepository inboxRepository,
-        ILogger<IdempotencyMiddleware> logger)
-    {
-        _inboxRepository = inboxRepository;
-        _logger = logger;
-    }
+    /// <summary>
+    /// Key used to store the logger in the context data.
+    /// </summary>
+    internal const string LoggerKey = "IdempotencyMiddleware.Logger";
 
-    public async Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+    public async Task InvokeAsync(
+        ConsumeContext context,
+        Func<ConsumeContext, CancellationToken, Task> next,
+        CancellationToken cancellationToken)
     {
         if (context.Message == null)
         {
@@ -27,30 +32,15 @@ public class IdempotencyMiddleware : IConsumeMiddleware
             return;
         }
 
-        var handlerType = context.Data.TryGetValue("HandlerType", out var ht)
-            ? ht?.ToString() ?? "Unknown"
-            : "Unknown";
+        // Store the inbox repository and logger in context for use by IdempotentHandlerInvoker
+        context.Data[InboxRepositoryKey] = inboxRepository;
+        context.Data[LoggerKey] = logger;
 
-        // Check if message was already processed
-        var alreadyProcessed = await _inboxRepository.HasBeenProcessedAsync(
-            context.Message.Id,
-            handlerType,
-            cancellationToken);
-
-        if (alreadyProcessed)
-        {
-            _logger.LogDebug("Message {MessageId} already processed by {HandlerType}, skipping",
-                context.Message.Id, handlerType);
-            return;
-        }
+        logger.LogDebug(
+            "Idempotency middleware enabled for message {MessageId}",
+            context.Message.Id);
 
         await next(context, cancellationToken);
-
-        // Mark as processed after successful handling
-        if (!context.ShouldReject && context.Exception == null)
-        {
-            await _inboxRepository.MarkAsProcessedAsync(context.Message, handlerType, cancellationToken);
-        }
     }
 }
 

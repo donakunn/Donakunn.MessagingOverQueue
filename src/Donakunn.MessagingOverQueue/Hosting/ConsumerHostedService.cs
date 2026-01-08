@@ -1,9 +1,9 @@
 using Donakunn.MessagingOverQueue.Configuration.Options;
 using Donakunn.MessagingOverQueue.Connection;
+using Donakunn.MessagingOverQueue.Consuming;
 using Donakunn.MessagingOverQueue.Consuming.Handlers;
 using Donakunn.MessagingOverQueue.Consuming.Middleware;
 using Donakunn.MessagingOverQueue.Topology.DependencyInjection;
-using MessagingOverQueue.src.Consuming;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

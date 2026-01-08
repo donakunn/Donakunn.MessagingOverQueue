@@ -17,7 +17,6 @@ using Donakunn.MessagingOverQueue.Publishing;
 using Donakunn.MessagingOverQueue.Publishing.Middleware;
 using Donakunn.MessagingOverQueue.Resilience;
 using Donakunn.MessagingOverQueue.Resilience.CircuitBreaker;
-using MessagingOverQueue.src.Abstractions.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
