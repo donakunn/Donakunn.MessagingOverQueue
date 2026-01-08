@@ -1,7 +1,6 @@
-using Donakunn.MessagingOverQueue.Abstractions.Serialization;
 using System.Collections.Concurrent;
 
-namespace MessagingOverQueue.src.Abstractions.Serialization;
+namespace Donakunn.MessagingOverQueue.Abstractions.Serialization;
 
 /// <summary>
 /// Default implementation of message type resolver.

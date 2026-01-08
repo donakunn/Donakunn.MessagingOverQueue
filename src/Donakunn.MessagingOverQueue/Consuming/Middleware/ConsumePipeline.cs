@@ -3,16 +3,8 @@ namespace Donakunn.MessagingOverQueue.Consuming.Middleware;
 /// <summary>
 /// Builds and executes the consume middleware pipeline.
 /// </summary>
-public class ConsumePipeline
+public class ConsumePipeline(IEnumerable<IConsumeMiddleware> middlewares, Func<ConsumeContext, CancellationToken, Task> terminalHandler)
 {
-    private readonly IEnumerable<IConsumeMiddleware> _middlewares;
-    private readonly Func<ConsumeContext, CancellationToken, Task> _terminalHandler;
-
-    public ConsumePipeline(IEnumerable<IConsumeMiddleware> middlewares, Func<ConsumeContext, CancellationToken, Task> terminalHandler)
-    {
-        _middlewares = middlewares;
-        _terminalHandler = terminalHandler;
-    }
 
     /// <summary>
     /// Executes the pipeline for the given context.
@@ -25,9 +17,9 @@ public class ConsumePipeline
 
     private Func<ConsumeContext, CancellationToken, Task> BuildPipeline()
     {
-        Func<ConsumeContext, CancellationToken, Task> current = _terminalHandler;
+        Func<ConsumeContext, CancellationToken, Task> current = terminalHandler;
 
-        foreach (var middleware in _middlewares.Reverse())
+        foreach (var middleware in middlewares.Reverse())
         {
             var next = current;
             var currentMiddleware = middleware;

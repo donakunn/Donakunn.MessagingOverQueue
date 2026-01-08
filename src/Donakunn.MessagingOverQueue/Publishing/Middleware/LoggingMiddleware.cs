@@ -13,7 +13,7 @@ public class LoggingMiddleware(ILogger<LoggingMiddleware> logger) : IPublishMidd
         var stopwatch = Stopwatch.StartNew();
 
         logger.LogDebug("Publishing message {MessageId} to exchange '{Exchange}' with routing key '{RoutingKey}'",
-            context.Message.Id, context.ExchangeName ?? "(default)", context.RoutingKey ?? "(none)");
+            context.Message?.Id, context.ExchangeName ?? "(default)", context.RoutingKey ?? "(none)");
 
         try
         {
@@ -21,13 +21,13 @@ public class LoggingMiddleware(ILogger<LoggingMiddleware> logger) : IPublishMidd
 
             stopwatch.Stop();
             logger.LogInformation("Published message {MessageId} to exchange '{Exchange}' in {ElapsedMs}ms",
-                context.Message.Id, context.ExchangeName ?? "(default)", stopwatch.ElapsedMilliseconds);
+                context.Message?.Id, context.ExchangeName ?? "(default)", stopwatch.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
             logger.LogError(ex, "Failed to publish message {MessageId} after {ElapsedMs}ms",
-                context.Message.Id, stopwatch.ElapsedMilliseconds);
+                context.Message?.Id, stopwatch.ElapsedMilliseconds);
             throw;
         }
     }

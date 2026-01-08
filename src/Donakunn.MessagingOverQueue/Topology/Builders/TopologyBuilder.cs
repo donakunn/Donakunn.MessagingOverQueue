@@ -1,9 +1,8 @@
-using Donakunn.MessagingOverQueue.Topology;
 using Donakunn.MessagingOverQueue.Topology.Abstractions;
 using Donakunn.MessagingOverQueue.Topology.Conventions;
 using System.Reflection;
 
-namespace Donakunn.MessagingOverQueues.Topology.Builders;
+namespace Donakunn.MessagingOverQueue.Topology.Builders;
 
 /// <summary>
 /// Fluent builder for configuring topology with handler-based auto-discovery.

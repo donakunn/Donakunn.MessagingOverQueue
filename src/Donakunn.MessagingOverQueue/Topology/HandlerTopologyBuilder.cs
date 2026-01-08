@@ -1,8 +1,8 @@
 using Donakunn.MessagingOverQueue.Abstractions.Messages;
 using Donakunn.MessagingOverQueue.Topology.Abstractions;
 using Donakunn.MessagingOverQueue.Topology.Attributes;
+using Donakunn.MessagingOverQueue.Topology.Builders;
 using Donakunn.MessagingOverQueue.Topology.Conventions;
-using Donakunn.MessagingOverQueues.Topology.Builders;
 
 namespace Donakunn.MessagingOverQueue.Topology;
 

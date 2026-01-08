@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
-namespace MessagingOverQueue.src.Consuming;
+namespace Donakunn.MessagingOverQueue.Consuming;
 
 /// <summary>
 /// RabbitMQ implementation of message consumer.
@@ -177,6 +177,7 @@ public class RabbitMqConsumer(
             scope.ServiceProvider,
             context.Message,
             context.MessageContext,
+            context.Data,
             cancellationToken);
     }
 

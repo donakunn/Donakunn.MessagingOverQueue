@@ -91,6 +91,14 @@ public class OrderedEvent : Event
     public DateTime EnqueuedAt { get; set; } = DateTime.UtcNow;
 }
 
+/// <summary>
+/// Event for testing idempotency.
+/// </summary>
+public class IdempotentTestEvent : Event
+{
+    public string Value { get; set; } = string.Empty;
+}
+
 #endregion
 
 #region Test Commands
@@ -414,6 +422,34 @@ public class ProcessOrderCommandHandler : IMessageHandler<ProcessOrderCommand>
         => Counter.WaitForCountAsync(expected, timeout);
 
     public Task HandleAsync(ProcessOrderCommand message, IMessageContext context, CancellationToken cancellationToken)
+    {
+        Counter.Increment();
+        Collector.Add(message);
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Handler for idempotency test events.
+/// </summary>
+public class IdempotentTestEventHandler : IMessageHandler<IdempotentTestEvent>
+{
+    private static readonly HandlerCounter Counter = new();
+    private static readonly MessageCollector<IdempotentTestEvent> Collector = new();
+
+    public static int HandleCount => Counter.Count;
+    public static IReadOnlyCollection<IdempotentTestEvent> HandledMessages => Collector.Messages;
+
+    public static void Reset()
+    {
+        Counter.Reset();
+        Collector.Clear();
+    }
+
+    public static Task WaitForCountAsync(int expected, TimeSpan timeout)
+        => Counter.WaitForCountAsync(expected, timeout);
+
+    public Task HandleAsync(IdempotentTestEvent message, IMessageContext context, CancellationToken cancellationToken)
     {
         Counter.Increment();
         Collector.Add(message);
