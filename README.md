@@ -548,6 +548,7 @@ public class AppDbContext : DbContext, IOutboxDbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Configure outbox entities
+        modelBuilder.ConfigureOutbox();
     }
 }
 ```
