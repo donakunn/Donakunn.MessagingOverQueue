@@ -1,42 +1,52 @@
 using Donakunn.MessagingOverQueue.Abstractions.Messages;
 using Donakunn.MessagingOverQueue.Persistence.Entities;
-using Microsoft.EntityFrameworkCore;
+using Donakunn.MessagingOverQueue.Persistence.Providers;
 
 namespace Donakunn.MessagingOverQueue.Persistence.Repositories;
 
 /// <summary>
-/// EF Core implementation of the inbox repository.
+/// Provider-based implementation of the inbox repository.
+/// Delegates all operations to the configured <see cref="IMessageStoreProvider"/>.
 /// </summary>
-public class InboxRepository<TContext>(TContext context) : IInboxRepository where TContext : DbContext, IOutboxDbContext
+public sealed class InboxRepository : IInboxRepository
 {
-    public async Task<bool> HasBeenProcessedAsync(Guid messageId, string handlerType, CancellationToken cancellationToken = default)
+    private readonly IMessageStoreProvider _provider;
+
+    public InboxRepository(IMessageStoreProvider provider)
     {
-        return await context.InboxMessages
-            .AnyAsync(m => m.Id == messageId && m.HandlerType == handlerType, cancellationToken);
+        _provider = provider;
+    }
+
+    public Task<bool> HasBeenProcessedAsync(Guid messageId, string handlerType, CancellationToken cancellationToken = default)
+    {
+        return _provider.ExistsInboxEntryAsync(messageId, handlerType, cancellationToken);
     }
 
     public async Task MarkAsProcessedAsync(IMessage message, string handlerType, CancellationToken cancellationToken = default)
     {
-        var inboxMessage = new InboxMessage
-        {
-            Id = message.Id,
-            MessageType = message.MessageType,
-            HandlerType = handlerType,
-            ProcessedAt = DateTime.UtcNow,
-            CorrelationId = message.CorrelationId
-        };
+        var entry = MessageStoreEntry.CreateInboxEntry(
+            message.Id,
+            message.MessageType,
+            handlerType,
+            message.CorrelationId);
 
-        await context.InboxMessages.AddAsync(inboxMessage, cancellationToken);
-        await context.SaveChangesAsync(cancellationToken);
+        await _provider.AddAsync(entry, cancellationToken);
     }
 
-    public async Task CleanupAsync(TimeSpan retentionPeriod, CancellationToken cancellationToken = default)
+    public async Task<bool> TryMarkAsProcessedAsync(IMessage message, string handlerType, CancellationToken cancellationToken = default)
     {
-        var cutoffDate = DateTime.UtcNow.Subtract(retentionPeriod);
+        var entry = MessageStoreEntry.CreateInboxEntry(
+            message.Id,
+            message.MessageType,
+            handlerType,
+            message.CorrelationId);
 
-        await context.InboxMessages
-            .Where(m => m.ProcessedAt < cutoffDate)
-            .ExecuteDeleteAsync(cancellationToken);
+        return await _provider.TryAddAsync(entry, cancellationToken);
+    }
+
+    public Task CleanupAsync(TimeSpan retentionPeriod, CancellationToken cancellationToken = default)
+    {
+        return _provider.CleanupAsync(MessageDirection.Inbox, retentionPeriod, cancellationToken);
     }
 }
 

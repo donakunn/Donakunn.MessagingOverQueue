@@ -49,5 +49,15 @@ public class OutboxOptions
     /// Maximum retry attempts for outbox messages.
     /// </summary>
     public int MaxRetryAttempts { get; set; } = 5;
+
+    /// <summary>
+    /// Whether to automatically create the database schema on startup.
+    /// </summary>
+    public bool AutoCreateSchema { get; set; } = true;
+
+    /// <summary>
+    /// Interval for cleanup operations. Defaults to hourly.
+    /// </summary>
+    public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromHours(1);
 }
 

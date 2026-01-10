@@ -1,5 +1,11 @@
 # MessagingOverQueue - RabbitMQ Messaging Library for .NET
 
+[![GitHub Repository](https://img.shields.io/badge/GitHub-donakunn%2FDonakunn.MessagingOverQueue-blue?logo=github)](https://github.com/donakunn/Donakunn.MessagingOverQueue)
+[![.NET 10](https://img.shields.io/badge/.NET-10-purple)](https://dotnet.microsoft.com/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green)](LICENSE)
+
+> **Repository**: [https://github.com/donakunn/Donakunn.MessagingOverQueue](https://github.com/donakunn/Donakunn.MessagingOverQueue)
+
 A robust, high-performance asynchronous messaging library for .NET 10 built on RabbitMQ with automatic handler-based topology discovery and SOLID design principles.
 
 ## Introduction
@@ -27,7 +33,7 @@ Traditional RabbitMQ integration requires significant boilerplate: manual exchan
 
 **Topology Management**: Supports convention-based auto-discovery, attribute-based configuration, fluent API, or hybrid approaches for maximum flexibility.
 
-**Transactional Reliability**: Built-in Outbox pattern for Entity Framework Core ensures at-least-once delivery with database transactional consistency.
+**Provider-Based Persistence**: Pluggable database provider architecture for the Outbox pattern. Choose your database (SQL Server, PostgreSQL, etc.) without being locked into Entity Framework Core.
 
 ### Target Scenarios
 
@@ -45,13 +51,14 @@ Traditional RabbitMQ integration requires significant boilerplate: manual exchan
 - ⚡ **Reflection-Free Dispatch**: Handler invoker registry eliminates reflection overhead during message processing
 - 🎯 **Clean Abstractions**: Simple interfaces for publishing and consuming messages (`ICommand`, `IEvent`, `IQuery`)
 - ⚙️ **Flexible Configuration**: Multiple configuration sources - Fluent API, appsettings.json, .NET Aspire, or custom sources
-- 🔄 **Entity Framework Integration**: Outbox pattern for reliable message delivery with transactional consistency
+- 🔄 **Provider-Based Outbox Pattern**: Reliable message delivery with pluggable database providers (SQL Server, with extensibility for others)
 - 🛡️ **Resilience**: Built-in retry policies, circuit breakers, and dead letter handling
 - 🔌 **Middleware Pipeline**: Extensible pipeline for both publishing and consuming
 - 💚 **Health Checks**: Built-in ASP.NET Core health check support
 - 💉 **Dependency Injection**: First-class DI support with Microsoft.Extensions.DependencyInjection
 - 🔗 **Connection Pooling**: Optimized channel management with automatic recovery
 - 📊 **Multiple Queue Types**: Support for Classic, Quorum, Stream, and Lazy queues
+- 🗄️ **No EF Core Dependency**: Uses high-performance ADO.NET for database operations
 
 ## Installation
 
@@ -64,7 +71,7 @@ dotnet add package MessagingOverQueue
 ### 1. Define Your Messages
 
 ```csharp
-using MessagingOverQueue.src.Abstractions.Messages;
+using MessagingOverQueue.Abstractions.Messages;
 
 // Event - can be consumed by multiple subscribers
 public class OrderCreatedEvent : Event
@@ -85,7 +92,7 @@ public class CreateOrderCommand : Command
 ### 2. Create Message Handlers
 
 ```csharp
-using MessagingOverQueue.src.Abstractions.Consuming;
+using MessagingOverQueue.Abstractions.Consuming;
 
 public class OrderCreatedHandler : IMessageHandler<OrderCreatedEvent>
 {
@@ -110,8 +117,8 @@ public class OrderCreatedHandler : IMessageHandler<OrderCreatedEvent>
 ### 3. Configure Services (Handler-Based Auto-Discovery)
 
 ```csharp
-using MessagingOverQueue.src.DependencyInjection;
-using MessagingOverQueue.src.Topology.DependencyInjection;
+using MessagingOverQueue.DependencyInjection;
+using MessagingOverQueue.Topology.DependencyInjection;
 
 services.AddRabbitMqMessaging(builder.Configuration)
     .AddTopology(topology => topology
@@ -245,7 +252,7 @@ public class OrderCreatedHandler : IMessageHandler<OrderCreatedEvent>
 Use `[ConsumerQueue]` attribute to customize the consumer's queue:
 
 ```csharp
-using MessagingOverQueue.src.Topology.Attributes;
+using MessagingOverQueue.Topology.Attributes;
 
 [ConsumerQueue(
     Name = "critical-payments",
@@ -357,7 +364,7 @@ services.AddRabbitMqMessaging(builder.Configuration)
 Add attributes to message classes for fine-grained control:
 
 ```csharp
-using MessagingOverQueue.src.Topology.Attributes;
+using MessagingOverQueue.Topology.Attributes;
 
 [Exchange("payments-exchange", Type = ExchangeType.Topic)]
 [Queue("payment-processed-queue", QueueType = QueueType.Quorum)]
@@ -425,7 +432,7 @@ services.AddRabbitMqMessaging(
 ## Publishing Messages
 
 ```csharp
-using MessagingOverQueue.src.Abstractions.Publishing;
+using MessagingOverQueue.Abstractions.Publishing;
 
 public class OrderController : ControllerBase
 {
@@ -530,77 +537,138 @@ public class MyHandler : IMessageHandler<MyEvent> { }
     }));
 ```
 
-## Outbox Pattern
+## Outbox Pattern (Provider-Based)
 
-Ensure messages are published reliably within database transactions.
+Ensure messages are published reliably within database transactions. The outbox pattern uses a **pluggable provider architecture** - no Entity Framework Core dependency required.
 
-### 1. Configure Your DbContext
+### Supported Providers
 
-```csharp
-using MessagingOverQueue.src.Persistence;
-using MessagingOverQueue.src.Persistence.Entities;
+| Provider | Package | Status |
+|----------|---------|--------|
+| SQL Server | Built-in | ✅ Available |
+| PostgreSQL | Coming soon | 🔜 Planned |
+| MySQL | Coming soon | 🔜 Planned |
+| In-Memory | Built-in (testing) | ✅ Available |
 
-public class AppDbContext : DbContext, IOutboxDbContext
-{
-    public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
-    public DbSet<InboxMessage> InboxMessages { get; set; } = null!;
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        // Configure outbox entities
-        modelBuilder.ConfigureOutbox();
-    }
-}
-```
-
-### 2. Register the Outbox Pattern
+### 1. Configure the Outbox with SQL Server
 
 ```csharp
+using MessagingOverQueue.DependencyInjection;
+using MessagingOverQueue.Persistence.DependencyInjection;
+
 services.AddRabbitMqMessaging(builder.Configuration)
     .AddTopology(topology => topology
         .WithServiceName("order-service")
         .ScanAssemblyContaining<OrderHandler>())
-    .AddOutboxPattern<AppDbContext>(options =>
+    .AddOutboxPattern(options =>
     {
         options.ProcessingInterval = TimeSpan.FromSeconds(5);
         options.BatchSize = 100;
+        options.AutoCreateSchema = true;  // Auto-create table on startup
+    })
+    .UseSqlServer(connectionString, store =>
+    {
+        store.TableName = "MessageStore";     // Custom table name
+        store.Schema = "messaging";           // Custom schema (optional)
+        store.AutoCreateSchema = true;        // Create table if not exists
+        store.CommandTimeoutSeconds = 30;     // Command timeout
     });
 ```
 
-### 3. Use Transactional Publishing
+### 2. Use Transactional Publishing
 
 ```csharp
-using MessagingOverQueue.src.Persistence;
+using MessagingOverQueue.Persistence;
 
 public class OrderService
 {
-    private readonly AppDbContext _context;
     private readonly OutboxPublisher _outboxPublisher;
+
+    public OrderService(OutboxPublisher outboxPublisher)
+    {
+        _outboxPublisher = outboxPublisher;
+    }
 
     public async Task CreateOrderAsync(CreateOrderCommand command)
     {
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-        
-        try
+        // Messages are stored in the outbox and processed by background service
+        await _outboxPublisher.PublishAsync(new OrderCreatedEvent
         {
-            var order = new Order { /* ... */ };
-            _context.Orders.Add(order);
-            
-            await _outboxPublisher.PublishAsync(new OrderCreatedEvent
-            {
-                OrderId = order.Id
-            });
-            
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
+            OrderId = Guid.NewGuid(),
+            CustomerId = command.CustomerId
+        });
     }
 }
+```
+
+### 3. Outbox Configuration Options
+
+```csharp
+.AddOutboxPattern(options =>
+{
+    options.Enabled = true;                              // Enable/disable outbox
+    options.ProcessingInterval = TimeSpan.FromSeconds(5); // How often to check for pending messages
+    options.BatchSize = 100;                             // Messages per batch
+    options.MaxRetryAttempts = 5;                        // Max retries before marking as failed
+    options.LockDuration = TimeSpan.FromMinutes(5);      // Lock timeout for processing
+    options.AutoCleanup = true;                          // Auto-delete old messages
+    options.RetentionPeriod = TimeSpan.FromDays(1);      // How long to keep processed messages
+    options.CleanupInterval = TimeSpan.FromHours(1);     // How often to run cleanup
+    options.AutoCreateSchema = true;                     // Create database table on startup
+});
+```
+
+### Message Store Schema
+
+The provider creates a unified `MessageStore` table for both outbox and inbox entries:
+
+```sql
+CREATE TABLE [MessageStore] (
+    [Id] UNIQUEIDENTIFIER NOT NULL,
+    [Direction] INT NOT NULL,           -- 0 = Outbox, 1 = Inbox
+    [MessageType] NVARCHAR(500) NOT NULL,
+    [Payload] VARBINARY(MAX) NULL,
+    [ExchangeName] NVARCHAR(256) NULL,
+    [RoutingKey] NVARCHAR(256) NULL,
+    [Headers] NVARCHAR(MAX) NULL,
+    [HandlerType] NVARCHAR(500) NULL,   -- For inbox idempotency
+    [CreatedAt] DATETIME2 NOT NULL,
+    [ProcessedAt] DATETIME2 NULL,
+    [Status] INT NOT NULL,              -- 0=Pending, 1=Processing, 2=Published, 3=Failed
+    [RetryCount] INT NOT NULL DEFAULT 0,
+    [LastError] NVARCHAR(4000) NULL,
+    [LockToken] NVARCHAR(100) NULL,
+    [LockExpiresAt] DATETIME2 NULL,
+    [CorrelationId] NVARCHAR(100) NULL,
+    
+    PRIMARY KEY CLUSTERED ([Id], [Direction], [HandlerType])
+);
+```
+
+### Implementing Custom Providers
+
+Create your own provider by implementing `IMessageStoreProvider`:
+
+```csharp
+public class PostgreSqlMessageStoreProvider : IMessageStoreProvider
+{
+    public Task AddAsync(MessageStoreEntry entry, CancellationToken ct = default) { ... }
+    public Task<IReadOnlyList<MessageStoreEntry>> AcquireOutboxLockAsync(int batchSize, TimeSpan lockDuration, CancellationToken ct = default) { ... }
+    public Task MarkAsPublishedAsync(Guid messageId, CancellationToken ct = default) { ... }
+    public Task MarkAsFailedAsync(Guid messageId, string error, CancellationToken ct = default) { ... }
+    public Task<bool> ExistsInboxEntryAsync(Guid messageId, string handlerType, CancellationToken ct = default) { ... }
+    public Task CleanupAsync(MessageDirection direction, TimeSpan retentionPeriod, CancellationToken ct = default) { ... }
+    public Task EnsureSchemaAsync(CancellationToken ct = default) { ... }
+    // ... other methods
+}
+```
+
+Register your custom provider:
+
+```csharp
+services.AddRabbitMqMessaging(config)
+    .AddOutboxPattern()
+    .Services.AddSingleton<IMessageStoreProvider, PostgreSqlMessageStoreProvider>();
 ```
 
 ## Resilience Configuration
@@ -735,11 +803,17 @@ services.AddRabbitMqMessaging(builder.Configuration, options => options
             provider.EnableDeadLetterByDefault = true;
         }))
     
-    // Add outbox pattern
-    .AddOutboxPattern<AppDbContext>(outbox =>
+    // Add outbox pattern with SQL Server
+    .AddOutboxPattern(outbox =>
     {
         outbox.ProcessingInterval = TimeSpan.FromSeconds(5);
         outbox.BatchSize = 100;
+        outbox.AutoCreateSchema = true;
+    })
+    .UseSqlServer(connectionString, store =>
+    {
+        store.TableName = "MessageStore";
+        store.Schema = "messaging";
     })
     
     // Configure resilience
@@ -780,7 +854,10 @@ MessagingOverQueue/
 │   ├── HealthChecks/           # RabbitMqHealthCheck
 │   ├── Hosting/                # ConsumerHostedService, RabbitMqHostedService
 │   ├── Persistence/
-│   │   ├── Entities/           # OutboxMessage, InboxMessage
+│   │   ├── DependencyInjection/ # MessageStoreProviderExtensions, IOutboxBuilder
+│   │   ├── Entities/           # MessageStoreEntry (unified outbox/inbox)
+│   │   ├── Providers/          # IMessageStoreProvider, MessageStoreOptions
+│   │   │   └── SqlServer/      # SqlServerMessageStoreProvider
 │   │   └── Repositories/       # IOutboxRepository, IInboxRepository
 │   ├── Publishing/
 │   │   └── Middleware/         # PublishPipeline, SerializationMiddleware
@@ -805,11 +882,51 @@ MessagingOverQueue/
 ✅ **Scoped DI**: Automatic scope management for each message handler  
 ✅ **Multiple Handlers**: Native support for multiple handlers per message type  
 ✅ **Concurrency Control**: Fine-grained control via SemaphoreSlim and prefetch settings  
-✅ **Reliability**: Outbox pattern ensures messages are never lost  
+✅ **Provider-Based Persistence**: Pluggable database providers without EF Core dependency  
+✅ **High-Performance ADO.NET**: Direct database access with optimized queries  
+✅ **Unified Message Store**: Single table for both outbox and inbox (idempotency)  
+✅ **Atomic Locking**: SQL Server's OUTPUT clause for race-condition-free message acquisition  
+✅ **Auto Schema Creation**: Database tables created automatically on startup  
 ✅ **Resilience**: Built-in retry, circuit breaker, and dead letter handling  
 ✅ **Flexibility**: Mix auto-discovery with manual configuration  
 ✅ **Production Ready**: Health checks, monitoring, and enterprise patterns  
 ✅ **High Performance**: Connection pooling, optimized serialization, minimal allocations  
+
+## Migration from EF Core-based Outbox
+
+If you're migrating from the previous EF Core-based outbox pattern:
+
+### Before (EF Core)
+```csharp
+// Old approach - required DbContext
+services.AddRabbitMqMessaging(config)
+    .AddOutboxPattern<AppDbContext>(options => { });
+```
+
+### After (Provider-Based)
+```csharp
+// New approach - provider-based, no EF Core required
+services.AddRabbitMqMessaging(config)
+    .AddOutboxPattern(options => { })
+    .UseSqlServer(connectionString);
+```
+
+### Data Migration
+
+The new unified `MessageStore` table replaces the separate `OutboxMessages` and `InboxMessages` tables. A migration script is recommended for production environments:
+
+```sql
+-- Example migration script (adjust as needed)
+INSERT INTO MessageStore (Id, Direction, MessageType, Payload, ExchangeName, RoutingKey, 
+    Headers, CreatedAt, ProcessedAt, Status, RetryCount, LastError, LockToken, LockExpiresAt, CorrelationId)
+SELECT Id, 0 as Direction, MessageType, Payload, ExchangeName, RoutingKey,
+    Headers, CreatedAt, ProcessedAt, Status, RetryCount, LastError, LockToken, LockExpiresAt, CorrelationId
+FROM OutboxMessages;
+
+INSERT INTO MessageStore (Id, Direction, MessageType, HandlerType, CreatedAt, ProcessedAt, Status, CorrelationId)
+SELECT Id, 1 as Direction, MessageType, HandlerType, ProcessedAt, ProcessedAt, 2, CorrelationId
+FROM InboxMessages;
+```
 
 ## Documentation
 
@@ -821,8 +938,17 @@ MessagingOverQueue/
 
 - .NET 10 or later
 - RabbitMQ 3.8+ (for quorum queues and streams)
+- SQL Server 2016+ (for SQL Server provider)
 
 ## License
 
 Apache 2.0
+
+## Contributing
+
+Contributions are welcome! Please visit our [GitHub repository](https://github.com/donakunn/Donakunn.MessagingOverQueue) to:
+- Report issues
+- Submit pull requests
+- Request features
+- View the source code
 

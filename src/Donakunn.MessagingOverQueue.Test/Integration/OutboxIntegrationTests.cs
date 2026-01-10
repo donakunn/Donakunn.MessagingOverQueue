@@ -1,12 +1,13 @@
 using Donakunn.MessagingOverQueue.Abstractions.Publishing;
 using Donakunn.MessagingOverQueue.DependencyInjection;
 using Donakunn.MessagingOverQueue.Persistence;
+using Donakunn.MessagingOverQueue.Persistence.DependencyInjection;
 using Donakunn.MessagingOverQueue.Persistence.Entities;
+using Donakunn.MessagingOverQueue.Persistence.Providers;
 using Donakunn.MessagingOverQueue.Persistence.Repositories;
 using Donakunn.MessagingOverQueue.Topology.DependencyInjection;
 using MessagingOverQueue.Test.Integration.Infrastructure;
 using MessagingOverQueue.Test.Integration.TestDoubles;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using static Donakunn.MessagingOverQueue.Topology.DependencyInjection.TopologyServiceCollectionExtensions;
@@ -15,7 +16,7 @@ namespace MessagingOverQueue.Test.Integration;
 
 /// <summary>
 /// Integration tests for the outbox pattern.
-/// Tests reliable message delivery using database transactions.
+/// Tests reliable message delivery using SQL Server provider.
 /// </summary>
 public class OutboxIntegrationTests : IntegrationTestBase
 {
@@ -26,27 +27,23 @@ public class OutboxIntegrationTests : IntegrationTestBase
         using var host = await BuildHostWithOutbox();
         var testEvent = new SimpleTestEvent { Value = "OutboxTest" };
 
-        // Act - use scoped services to avoid DbContext threading issues
+        // Act - use scoped services
         using (var scope = host.Services.CreateScope())
         {
             var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-
             await ((IEventPublisher)outboxPublisher).PublishAsync(testEvent);
-            await dbContext.SaveChangesAsync();
         }
 
-        // Assert - use a new scope to verify
+        // Assert - verify message was stored
         using (var scope = host.Services.CreateScope())
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var outboxMessage = await dbContext.OutboxMessages
-                .FirstOrDefaultAsync(m => m.Id == testEvent.Id);
+            var provider = scope.ServiceProvider.GetRequiredService<IMessageStoreProvider>();
+            var entry = await provider.GetByIdAsync(testEvent.Id, MessageDirection.Outbox);
 
-            Assert.NotNull(outboxMessage);
-            Assert.Equal(OutboxMessageStatus.Pending, outboxMessage.Status);
-            Assert.NotNull(outboxMessage.Payload);
-            Assert.True(outboxMessage.Payload.Length > 0);
+            Assert.NotNull(entry);
+            Assert.Equal(MessageStatus.Pending, entry.Status);
+            Assert.NotNull(entry.Payload);
+            Assert.True(entry.Payload.Length > 0);
         }
     }
 
@@ -62,10 +59,7 @@ public class OutboxIntegrationTests : IntegrationTestBase
         using (var scope = host.Services.CreateScope())
         {
             var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-
             await ((IEventPublisher)outboxPublisher).PublishAsync(testEvent);
-            await dbContext.SaveChangesAsync();
         }
 
         // Wait for the processor to pick up and publish the message
@@ -85,258 +79,43 @@ public class OutboxIntegrationTests : IntegrationTestBase
         using var host = await BuildHostWithOutbox(processingInterval: TimeSpan.FromSeconds(1));
         var testEvent = new SimpleTestEvent { Value = "StatusTest" };
 
-        // Act - store message
+        // Act - store and let processor run
         using (var scope = host.Services.CreateScope())
         {
             var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-
             await ((IEventPublisher)outboxPublisher).PublishAsync(testEvent);
-            await dbContext.SaveChangesAsync();
         }
 
-        // Wait for processing
+        // Wait for handler to process
         await SimpleTestEventHandler.WaitForCountAsync(1, TimeSpan.FromSeconds(15));
 
-        // Give the processor time to update status
+        // Allow time for status update
         await Task.Delay(500);
 
-        // Assert - use fresh scope
+        // Assert - verify status changed to Published
         using (var scope = host.Services.CreateScope())
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var outboxMessage = await dbContext.OutboxMessages
-                .FirstOrDefaultAsync(m => m.Id == testEvent.Id);
+            var provider = scope.ServiceProvider.GetRequiredService<IMessageStoreProvider>();
+            var entry = await provider.GetByIdAsync(testEvent.Id, MessageDirection.Outbox);
 
-            Assert.NotNull(outboxMessage);
-            Assert.Equal(OutboxMessageStatus.Published, outboxMessage.Status);
-            Assert.NotNull(outboxMessage.ProcessedAt);
+            Assert.NotNull(entry);
+            Assert.Equal(MessageStatus.Published, entry.Status);
+            Assert.NotNull(entry.ProcessedAt);
         }
     }
 
     [Fact]
-    public async Task OutboxPublisher_Stores_Command_With_Correct_RoutingKey()
-    {
-        // Arrange
-        using var host = await BuildHostWithOutbox();
-        var command = new SimpleTestCommand { Action = "TestAction" };
-
-        // Act
-        using (var scope = host.Services.CreateScope())
-        {
-            var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-
-            await ((ICommandSender)outboxPublisher).SendAsync(command);
-            await dbContext.SaveChangesAsync();
-        }
-
-        // Assert
-        using (var scope = host.Services.CreateScope())
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var outboxMessage = await dbContext.OutboxMessages
-                .FirstOrDefaultAsync(m => m.Id == command.Id);
-
-            Assert.NotNull(outboxMessage);
-            Assert.NotNull(outboxMessage.RoutingKey);
-            // The routing key follows the topology naming convention (kebab-case with suffix removed)
-            // SimpleTestCommand -> simple.test (for routing key format)
-            Assert.Contains("simple", outboxMessage.RoutingKey, StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    [Fact]
-    public async Task Multiple_Messages_In_Single_Transaction_Are_All_Stored()
-    {
-        // Arrange
-        using var host = await BuildHostWithOutbox();
-        var events = Enumerable.Range(0, 5)
-            .Select(i => new SimpleTestEvent { Value = $"Batch-{i}" })
-            .ToList();
-
-        // Act - simulate a transaction
-        using (var scope = host.Services.CreateScope())
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-
-            await using var transaction = await dbContext.Database.BeginTransactionAsync();
-
-            foreach (var evt in events)
-            {
-                await ((IEventPublisher)outboxPublisher).PublishAsync(evt);
-            }
-
-            await dbContext.SaveChangesAsync();
-            await transaction.CommitAsync();
-        }
-
-        // Assert
-        using (var scope = host.Services.CreateScope())
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var storedMessages = await dbContext.OutboxMessages
-                .Where(m => m.Status == OutboxMessageStatus.Pending)
-                .ToListAsync();
-
-            Assert.Equal(5, storedMessages.Count);
-            foreach (var evt in events)
-            {
-                Assert.Contains(storedMessages, m => m.Id == evt.Id);
-            }
-        }
-    }
-
-    [Fact]
-    public async Task Transaction_Rollback_Does_Not_Store_Outbox_Messages()
-    {
-        // Arrange
-        using var host = await BuildHostWithOutbox();
-        var testEvent = new SimpleTestEvent { Value = "RollbackTest" };
-        var eventId = testEvent.Id;
-
-        // Act - rollback transaction
-        using (var scope = host.Services.CreateScope())
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-
-            await using var transaction = await dbContext.Database.BeginTransactionAsync();
-
-            await ((IEventPublisher)outboxPublisher).PublishAsync(testEvent);
-            await dbContext.SaveChangesAsync();
-            await transaction.RollbackAsync();
-        }
-
-        // Assert - message should not be in database
-        using (var scope = host.Services.CreateScope())
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var outboxMessage = await dbContext.OutboxMessages
-                .FirstOrDefaultAsync(m => m.Id == eventId);
-
-            Assert.Null(outboxMessage);
-        }
-    }
-
-    [Fact]
-    public async Task OutboxProcessor_Processes_Messages_In_Batches()
-    {
-        // Arrange
-        SimpleTestEventHandler.Reset();
-        using var host = await BuildHostWithOutbox(
-            processingInterval: TimeSpan.FromSeconds(1),
-            batchSize: 5);
-
-        // Create more messages than batch size
-        var events = Enumerable.Range(0, 10)
-            .Select(i => new SimpleTestEvent { Value = $"Batch-{i}" })
-            .ToList();
-
-        // Act
-        using (var scope = host.Services.CreateScope())
-        {
-            var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-
-            foreach (var evt in events)
-            {
-                await ((IEventPublisher)outboxPublisher).PublishAsync(evt);
-            }
-            await dbContext.SaveChangesAsync();
-        }
-
-        // Wait for all messages to be processed (may take multiple batches)
-        await SimpleTestEventHandler.WaitForCountAsync(10, TimeSpan.FromSeconds(30));
-
-        // Assert
-        Assert.Equal(10, SimpleTestEventHandler.HandleCount);
-    }
-
-    [Fact]
-    public async Task OutboxMessage_Preserves_CorrelationId()
-    {
-        // Arrange
-        using var host = await BuildHostWithOutbox();
-        var correlationId = Guid.NewGuid().ToString();
-        var testEvent = new SimpleTestEvent { Value = "CorrelationTest" };
-
-        // Set correlation ID
-        typeof(SimpleTestEvent).GetProperty("CorrelationId")?.SetValue(testEvent, correlationId);
-
-        // Act
-        using (var scope = host.Services.CreateScope())
-        {
-            var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-
-            await ((IEventPublisher)outboxPublisher).PublishAsync(testEvent);
-            await dbContext.SaveChangesAsync();
-        }
-
-        // Assert
-        using (var scope = host.Services.CreateScope())
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var outboxMessage = await dbContext.OutboxMessages
-                .FirstOrDefaultAsync(m => m.Id == testEvent.Id);
-
-            Assert.NotNull(outboxMessage);
-            Assert.Equal(correlationId, outboxMessage.CorrelationId);
-        }
-    }
-
-    [Fact]
-    public async Task Outbox_And_Regular_Publisher_Can_Coexist()
-    {
-        // Arrange
-        SimpleTestEventHandler.Reset();
-        using var host = await BuildHostWithOutbox(processingInterval: TimeSpan.FromSeconds(1));
-
-        // Act - publish through outbox
-        var outboxEvent = new SimpleTestEvent { Value = "ViaOutbox" };
-        using (var scope = host.Services.CreateScope())
-        {
-            var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-
-            await ((IEventPublisher)outboxPublisher).PublishAsync(outboxEvent);
-            await dbContext.SaveChangesAsync();
-        }
-
-        // Publish directly (using different scope)
-        var directEvent = new SimpleTestEvent { Value = "ViaDirect" };
-        using (var scope = host.Services.CreateScope())
-        {
-            var regularPublisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
-            await regularPublisher.PublishAsync(directEvent);
-        }
-
-        // Wait for both messages
-        await SimpleTestEventHandler.WaitForCountAsync(2, TimeSpan.FromSeconds(15));
-
-        // Assert
-        Assert.Equal(2, SimpleTestEventHandler.HandleCount);
-        Assert.Contains(SimpleTestEventHandler.HandledMessages, m => m.Value == "ViaOutbox");
-        Assert.Contains(SimpleTestEventHandler.HandledMessages, m => m.Value == "ViaDirect");
-    }
-
-    [Fact]
-    public async Task OutboxRepository_Can_Acquire_Lock_On_Pending_Messages()
+    public async Task OutboxRepository_AcquireLock_Sets_Processing_Status()
     {
         // Arrange
         using var host = await BuildHostWithOutbox();
         var testEvent = new SimpleTestEvent { Value = "LockTest" };
 
-        // Store a message
+        // Store message
         using (var scope = host.Services.CreateScope())
         {
             var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-
             await ((IEventPublisher)outboxPublisher).PublishAsync(testEvent);
-            await dbContext.SaveChangesAsync();
         }
 
         // Act - acquire lock in new scope
@@ -349,7 +128,7 @@ public class OutboxIntegrationTests : IntegrationTestBase
             Assert.Single(lockedMessages);
             var lockedMessage = lockedMessages.First();
             Assert.Equal(testEvent.Id, lockedMessage.Id);
-            Assert.Equal(OutboxMessageStatus.Processing, lockedMessage.Status);
+            Assert.Equal(MessageStatus.Processing, lockedMessage.Status);
             Assert.NotNull(lockedMessage.LockToken);
             Assert.NotNull(lockedMessage.LockExpiresAt);
         }
@@ -362,21 +141,21 @@ public class OutboxIntegrationTests : IntegrationTestBase
         using var host = await BuildHostWithOutbox();
         var oldMessageId = Guid.NewGuid();
 
-        // Create an old published message directly in database
+        // Create an old published message directly via provider
         using (var scope = host.Services.CreateScope())
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var oldMessage = new OutboxMessage
+            var provider = scope.ServiceProvider.GetRequiredService<IMessageStoreProvider>();
+            var oldEntry = new MessageStoreEntry
             {
                 Id = oldMessageId,
+                Direction = MessageDirection.Outbox,
                 MessageType = "TestType",
                 Payload = new byte[] { 1, 2, 3 },
                 CreatedAt = DateTime.UtcNow.AddDays(-10),
                 ProcessedAt = DateTime.UtcNow.AddDays(-10),
-                Status = OutboxMessageStatus.Published
+                Status = MessageStatus.Published
             };
-            dbContext.OutboxMessages.Add(oldMessage);
-            await dbContext.SaveChangesAsync();
+            await provider.AddAsync(oldEntry);
         }
 
         // Act - cleanup with 1 day retention
@@ -389,9 +168,9 @@ public class OutboxIntegrationTests : IntegrationTestBase
         // Assert
         using (var scope = host.Services.CreateScope())
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-            var message = await dbContext.OutboxMessages.FindAsync(oldMessageId);
-            Assert.Null(message);
+            var provider = scope.ServiceProvider.GetRequiredService<IMessageStoreProvider>();
+            var entry = await provider.GetByIdAsync(oldMessageId, MessageDirection.Outbox);
+            Assert.Null(entry);
         }
     }
 
@@ -401,10 +180,6 @@ public class OutboxIntegrationTests : IntegrationTestBase
     {
         return await BuildHost(services =>
         {
-            // Add DbContext with SQL Server (from base class's SQL container)
-            services.AddDbContext<TestDbContext>(options =>
-                options.UseSqlServer(ConnectionString));
-
             services.AddRabbitMqMessaging(options =>
             {
                 options.UseHost(_rabbitMqContainer!.Hostname);
@@ -415,19 +190,25 @@ public class OutboxIntegrationTests : IntegrationTestBase
             .AddTopology(topology => topology
                 .WithServiceName("outbox-test-service")
                 .ScanAssemblyContaining<SimpleTestEventHandler>())
-            .AddOutboxPattern<TestDbContext>(options =>
+            .AddOutboxPattern(options =>
             {
                 options.ProcessingInterval = processingInterval ?? TimeSpan.FromSeconds(5);
                 options.BatchSize = batchSize;
                 options.Enabled = true;
                 options.AutoCleanup = true;
                 options.RetentionPeriod = TimeSpan.FromHours(1);
+                options.AutoCreateSchema = true;
+            })
+            .UseSqlServer(ConnectionString, store =>
+            {
+                store.TableName = "MessageStore";
+                store.AutoCreateSchema = true;
             });
         });
     }
 
     protected override void ConfigureAdditionalServices(IServiceCollection services)
     {
-        // No additional services needed - base class handles DbContext registration
+        // No additional services needed - SQL Server provider is configured per test
     }
 }

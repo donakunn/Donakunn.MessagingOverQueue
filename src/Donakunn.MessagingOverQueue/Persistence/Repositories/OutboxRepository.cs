@@ -1,102 +1,69 @@
 using Donakunn.MessagingOverQueue.Persistence.Entities;
-using Microsoft.EntityFrameworkCore;
+using Donakunn.MessagingOverQueue.Persistence.Providers;
 
 namespace Donakunn.MessagingOverQueue.Persistence.Repositories;
 
 /// <summary>
-/// EF Core implementation of the outbox repository.
+/// Provider-based implementation of the outbox repository.
+/// Delegates all operations to the configured <see cref="IMessageStoreProvider"/>.
 /// </summary>
-public class OutboxRepository<TContext>(TContext context) : IOutboxRepository where TContext : DbContext, IOutboxDbContext
+public sealed class OutboxRepository : IOutboxRepository
 {
-    public async Task AddAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+    private readonly IMessageStoreProvider _provider;
+
+    public OutboxRepository(IMessageStoreProvider provider)
     {
-        await context.OutboxMessages.AddAsync(message, cancellationToken);
+        _provider = provider;
     }
 
-    public async Task<IReadOnlyList<OutboxMessage>> GetPendingMessagesAsync(int batchSize, CancellationToken cancellationToken = default)
+    public Task AddAsync(MessageStoreEntry entry, CancellationToken cancellationToken = default)
     {
-        return await context.OutboxMessages
-            .Where(m => m.Status == OutboxMessageStatus.Pending)
-            .OrderBy(m => m.CreatedAt)
-            .Take(batchSize)
-            .ToListAsync(cancellationToken);
+        ValidateOutboxEntry(entry);
+        return _provider.AddAsync(entry, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<OutboxMessage>> AcquireLockAsync(int batchSize, TimeSpan lockDuration, CancellationToken cancellationToken = default)
+    public Task AddAsync(MessageStoreEntry entry, ITransactionContext transactionContext, CancellationToken cancellationToken = default)
     {
-        var lockToken = Guid.NewGuid().ToString("N");
-        var now = DateTime.UtcNow;
-        var lockExpiresAt = now.Add(lockDuration);
+        ValidateOutboxEntry(entry);
+        return _provider.AddAsync(entry, transactionContext, cancellationToken);
+    }
 
-        // Get messages that are pending or have expired locks
-        var messages = await context.OutboxMessages
-            .Where(m =>
-                (m.Status == OutboxMessageStatus.Pending) ||
-                (m.Status == OutboxMessageStatus.Processing && m.LockExpiresAt < now))
-            .OrderBy(m => m.CreatedAt)
-            .Take(batchSize)
-            .ToListAsync(cancellationToken);
+    public Task<IReadOnlyList<MessageStoreEntry>> AcquireLockAsync(int batchSize, TimeSpan lockDuration, CancellationToken cancellationToken = default)
+    {
+        return _provider.AcquireOutboxLockAsync(batchSize, lockDuration, cancellationToken);
+    }
 
-        foreach (var message in messages)
+    public Task MarkAsPublishedAsync(Guid messageId, CancellationToken cancellationToken = default)
+    {
+        return _provider.MarkAsPublishedAsync(messageId, cancellationToken);
+    }
+
+    public Task MarkAsFailedAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
+    {
+        return _provider.MarkAsFailedAsync(messageId, error, cancellationToken);
+    }
+
+    public Task ReleaseLockAsync(Guid messageId, CancellationToken cancellationToken = default)
+    {
+        return _provider.ReleaseLockAsync(messageId, cancellationToken);
+    }
+
+    public Task CleanupAsync(TimeSpan retentionPeriod, CancellationToken cancellationToken = default)
+    {
+        return _provider.CleanupAsync(MessageDirection.Outbox, retentionPeriod, cancellationToken);
+    }
+
+    public Task<ITransactionContext> BeginTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        return _provider.BeginTransactionAsync(cancellationToken);
+    }
+
+    private static void ValidateOutboxEntry(MessageStoreEntry entry)
+    {
+        if (entry.Direction != MessageDirection.Outbox)
         {
-            message.Status = OutboxMessageStatus.Processing;
-            message.LockToken = lockToken;
-            message.LockExpiresAt = lockExpiresAt;
+            throw new ArgumentException("Entry must be an outbox entry.", nameof(entry));
         }
-
-        await context.SaveChangesAsync(cancellationToken);
-
-        return messages;
-    }
-
-    public async Task MarkAsPublishedAsync(Guid messageId, CancellationToken cancellationToken = default)
-    {
-        var message = await context.OutboxMessages.FindAsync(new object[] { messageId }, cancellationToken);
-        if (message != null)
-        {
-            message.Status = OutboxMessageStatus.Published;
-            message.ProcessedAt = DateTime.UtcNow;
-            message.LockToken = null;
-            message.LockExpiresAt = null;
-        }
-    }
-
-    public async Task MarkAsFailedAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
-    {
-        var message = await context.OutboxMessages.FindAsync(new object[] { messageId }, cancellationToken);
-        if (message != null)
-        {
-            message.RetryCount++;
-            message.LastError = error.Length > 4000 ? error[..4000] : error;
-            message.Status = OutboxMessageStatus.Failed;
-            message.LockToken = null;
-            message.LockExpiresAt = null;
-        }
-    }
-
-    public async Task ReleaseLockAsync(Guid messageId, CancellationToken cancellationToken = default)
-    {
-        var message = await context.OutboxMessages.FindAsync([messageId], cancellationToken);
-        if (message != null)
-        {
-            message.Status = OutboxMessageStatus.Pending;
-            message.LockToken = null;
-            message.LockExpiresAt = null;
-        }
-    }
-
-    public async Task CleanupAsync(TimeSpan retentionPeriod, CancellationToken cancellationToken = default)
-    {
-        var cutoffDate = DateTime.UtcNow.Subtract(retentionPeriod);
-
-        await context.OutboxMessages
-            .Where(m => m.Status == OutboxMessageStatus.Published && m.ProcessedAt < cutoffDate)
-            .ExecuteDeleteAsync(cancellationToken);
-    }
-
-    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        await context.SaveChangesAsync(cancellationToken);
     }
 }
 

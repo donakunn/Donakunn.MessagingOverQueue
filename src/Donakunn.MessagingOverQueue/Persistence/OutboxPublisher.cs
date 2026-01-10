@@ -11,13 +11,27 @@ namespace Donakunn.MessagingOverQueue.Persistence;
 
 /// <summary>
 /// Publisher that stores messages in the outbox for reliable delivery.
+/// Use this when you need transactional consistency with your database operations.
 /// </summary>
-public class OutboxPublisher(
-    IOutboxRepository repository,
-    IMessageSerializer serializer,
-    IMessageRoutingResolver routingResolver,
-    ILogger<OutboxPublisher> logger) : IMessagePublisher, IEventPublisher, ICommandSender
+public sealed class OutboxPublisher : IMessagePublisher, IEventPublisher, ICommandSender
 {
+    private readonly IOutboxRepository _repository;
+    private readonly IMessageSerializer _serializer;
+    private readonly IMessageRoutingResolver _routingResolver;
+    private readonly ILogger<OutboxPublisher> _logger;
+
+    public OutboxPublisher(
+        IOutboxRepository repository,
+        IMessageSerializer serializer,
+        IMessageRoutingResolver routingResolver,
+        ILogger<OutboxPublisher> logger)
+    {
+        _repository = repository;
+        _serializer = serializer;
+        _routingResolver = routingResolver;
+        _logger = logger;
+    }
+
     public async Task PublishAsync<T>(T message, string? exchangeName = null, string? routingKey = null, CancellationToken cancellationToken = default) where T : IMessage
     {
         await PublishAsync(message, new PublishOptions
@@ -30,38 +44,34 @@ public class OutboxPublisher(
     public async Task PublishAsync<T>(T message, PublishOptions options, CancellationToken cancellationToken = default) where T : IMessage
     {
         // Use routing resolver for defaults if not explicitly specified
-        var exchangeName = options.ExchangeName ?? routingResolver.GetExchangeName<T>();
-        var routingKey = options.RoutingKey ?? routingResolver.GetRoutingKey<T>();
+        var exchangeName = options.ExchangeName ?? _routingResolver.GetExchangeName<T>();
+        var routingKey = options.RoutingKey ?? _routingResolver.GetRoutingKey<T>();
 
-        var outboxMessage = new OutboxMessage
-        {
-            Id = message.Id,
-            MessageType = message.MessageType,
-            Payload = serializer.Serialize(message),
-            ExchangeName = exchangeName,
-            RoutingKey = routingKey,
-            Headers = options.Headers != null ? JsonSerializer.Serialize(options.Headers) : null,
-            CreatedAt = DateTime.UtcNow,
-            Status = OutboxMessageStatus.Pending,
-            CorrelationId = message.CorrelationId
-        };
+        var entry = MessageStoreEntry.CreateOutboxEntry(
+            message.Id,
+            message.MessageType,
+            _serializer.Serialize(message),
+            exchangeName,
+            routingKey,
+            options.Headers != null ? JsonSerializer.Serialize(options.Headers) : null,
+            message.CorrelationId);
 
-        await repository.AddAsync(outboxMessage, cancellationToken);
+        await _repository.AddAsync(entry, cancellationToken);
 
-        logger.LogDebug("Added message {MessageId} to outbox for exchange '{Exchange}' with routing key '{RoutingKey}'",
+        _logger.LogDebug("Added message {MessageId} to outbox for exchange '{Exchange}' with routing key '{RoutingKey}'",
             message.Id, exchangeName, routingKey);
     }
 
     public Task PublishAsync<T>(T @event, CancellationToken cancellationToken = default) where T : IEvent
     {
-        var exchangeName = routingResolver.GetExchangeName<T>();
-        var routingKey = routingResolver.GetRoutingKey<T>();
+        var exchangeName = _routingResolver.GetExchangeName<T>();
+        var routingKey = _routingResolver.GetRoutingKey<T>();
         return PublishAsync(@event, exchangeName, routingKey, cancellationToken);
     }
 
     public Task SendAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand
     {
-        var queueName = routingResolver.GetQueueName<T>();
+        var queueName = _routingResolver.GetQueueName<T>();
         return SendAsync(command, queueName, cancellationToken);
     }
 
