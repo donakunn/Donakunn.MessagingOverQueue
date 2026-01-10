@@ -1,50 +1,72 @@
 using Donakunn.MessagingOverQueue.Persistence.Entities;
+using Donakunn.MessagingOverQueue.Persistence.Providers;
 
 namespace Donakunn.MessagingOverQueue.Persistence.Repositories;
 
 /// <summary>
 /// Repository interface for outbox operations.
+/// Provides provider-agnostic access to outbox message storage.
 /// </summary>
 public interface IOutboxRepository
 {
     /// <summary>
     /// Adds a message to the outbox.
     /// </summary>
-    Task AddAsync(OutboxMessage message, CancellationToken cancellationToken = default);
+    /// <param name="entry">The outbox entry to add.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task AddAsync(MessageStoreEntry entry, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets pending messages that are ready for processing.
+    /// Adds a message to the outbox within an existing transaction context.
+    /// Use this when you need transactional consistency with other database operations.
     /// </summary>
-    Task<IReadOnlyList<OutboxMessage>> GetPendingMessagesAsync(int batchSize, CancellationToken cancellationToken = default);
+    /// <param name="entry">The outbox entry to add.</param>
+    /// <param name="transactionContext">The transaction context to use.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task AddAsync(MessageStoreEntry entry, ITransactionContext transactionContext, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Acquires a lock on messages for processing.
+    /// Returns messages that are pending or have expired locks.
     /// </summary>
-    Task<IReadOnlyList<OutboxMessage>> AcquireLockAsync(int batchSize, TimeSpan lockDuration, CancellationToken cancellationToken = default);
+    /// <param name="batchSize">Maximum number of messages to acquire.</param>
+    /// <param name="lockDuration">How long to hold the lock.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<MessageStoreEntry>> AcquireLockAsync(int batchSize, TimeSpan lockDuration, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Marks a message as published.
     /// </summary>
+    /// <param name="messageId">The message ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task MarkAsPublishedAsync(Guid messageId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Marks a message as failed.
     /// </summary>
+    /// <param name="messageId">The message ID.</param>
+    /// <param name="error">The error message.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task MarkAsFailedAsync(Guid messageId, string error, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Releases the lock on a message.
+    /// Releases the lock on a message, returning it to pending status.
     /// </summary>
+    /// <param name="messageId">The message ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task ReleaseLockAsync(Guid messageId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Cleans up old processed messages.
     /// </summary>
+    /// <param name="retentionPeriod">How long to retain processed messages.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task CleanupAsync(TimeSpan retentionPeriod, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Saves changes.
+    /// Creates a new transaction context for batch operations.
     /// </summary>
-    Task SaveChangesAsync(CancellationToken cancellationToken = default);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ITransactionContext> BeginTransactionAsync(CancellationToken cancellationToken = default);
 }
 

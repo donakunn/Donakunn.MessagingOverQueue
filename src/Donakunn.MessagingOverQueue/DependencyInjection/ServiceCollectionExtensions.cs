@@ -12,12 +12,12 @@ using Donakunn.MessagingOverQueue.DependencyInjection;
 using Donakunn.MessagingOverQueue.HealthChecks;
 using Donakunn.MessagingOverQueue.Hosting;
 using Donakunn.MessagingOverQueue.Persistence;
+using Donakunn.MessagingOverQueue.Persistence.DependencyInjection;
 using Donakunn.MessagingOverQueue.Persistence.Repositories;
 using Donakunn.MessagingOverQueue.Publishing;
 using Donakunn.MessagingOverQueue.Publishing.Middleware;
 using Donakunn.MessagingOverQueue.Resilience;
 using Donakunn.MessagingOverQueue.Resilience.CircuitBreaker;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -200,16 +200,22 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds the outbox pattern for reliable messaging.
+    /// Adds the outbox pattern for reliable messaging with a configurable provider.
+    /// Use the returned <see cref="IOutboxBuilder"/> to configure the database provider.
     /// </summary>
-    /// <typeparam name="TContext">The DbContext type that implements IOutboxDbContext.</typeparam>
     /// <param name="builder">The messaging builder.</param>
     /// <param name="configure">Optional configuration for outbox options.</param>
-    /// <returns>The messaging builder for chaining.</returns>
-    public static IMessagingBuilder AddOutboxPattern<TContext>(
+    /// <returns>The outbox builder for configuring the database provider.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddRabbitMqMessaging(config)
+    ///     .AddOutboxPattern(options => options.BatchSize = 50)
+    ///     .UseSqlServer(connectionString, store => store.TableName = "MessageStore");
+    /// </code>
+    /// </example>
+    public static IOutboxBuilder AddOutboxPattern(
         this IMessagingBuilder builder,
         Action<OutboxOptions>? configure = null)
-        where TContext : DbContext, IOutboxDbContext
     {
         var services = builder.Services;
 
@@ -218,22 +224,21 @@ public static class ServiceCollectionExtensions
             configure?.Invoke(options);
         });
 
-        // Register outbox repository
-        services.AddScoped<IOutboxRepository, OutboxRepository<TContext>>();
-        // Register inbox repository for idempotency
-        services.AddScoped<IInboxRepository, InboxRepository<TContext>>();
+        // Register repositories (they delegate to the provider)
+        services.TryAddSingleton<IOutboxRepository, OutboxRepository>();
+        services.TryAddSingleton<IInboxRepository, InboxRepository>();
 
-        // Register outbox publisher as the default publisher for transactional scenarios
+        // Register outbox publisher for transactional scenarios
         services.AddScoped<OutboxPublisher>();
 
-        // Register outbox processor
+        // Register outbox processor background service
         services.AddHostedService<OutboxProcessor>();
 
         // Register idempotency middleware
         services.AddScoped<IdempotencyMiddleware>();
         services.AddScoped<IConsumeMiddleware>(sp => sp.GetRequiredService<IdempotencyMiddleware>());
 
-        return builder;
+        return new OutboxBuilder(services);
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using Donakunn.MessagingOverQueue.Abstractions.Publishing;
 using Donakunn.MessagingOverQueue.Configuration.Options;
 using Donakunn.MessagingOverQueue.Persistence.Entities;
+using Donakunn.MessagingOverQueue.Persistence.Providers;
 using Donakunn.MessagingOverQueue.Persistence.Repositories;
 using Donakunn.MessagingOverQueue.Publishing;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,23 +15,56 @@ namespace Donakunn.MessagingOverQueue.Persistence;
 /// <summary>
 /// Background service that processes messages from the outbox.
 /// </summary>
-public class OutboxProcessor(
-    IServiceScopeFactory scopeFactory,
-    IMessagePublisher publisher,
-    IOptions<OutboxOptions> options,
-    ILogger<OutboxProcessor> logger) : BackgroundService
+public sealed class OutboxProcessor : BackgroundService
 {
-    private readonly OutboxOptions _options = options.Value;
+    private readonly IOutboxRepository _repository;
+    private readonly IInboxRepository _inboxRepository;
+    private readonly IMessageStoreProvider _provider;
+    private readonly IMessagePublisher _publisher;
+    private readonly OutboxOptions _options;
+    private readonly ILogger<OutboxProcessor> _logger;
+
+    private DateTime _lastCleanupTime = DateTime.MinValue;
+
+    public OutboxProcessor(
+        IOutboxRepository repository,
+        IInboxRepository inboxRepository,
+        IMessageStoreProvider provider,
+        IMessagePublisher publisher,
+        IOptions<OutboxOptions> options,
+        ILogger<OutboxProcessor> logger)
+    {
+        _repository = repository;
+        _inboxRepository = inboxRepository;
+        _provider = provider;
+        _publisher = publisher;
+        _options = options.Value;
+        _logger = logger;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.Enabled)
         {
-            logger.LogInformation("Outbox processor is disabled");
+            _logger.LogInformation("Outbox processor is disabled");
             return;
         }
 
-        logger.LogInformation("Outbox processor started with interval {Interval}ms",
+        // Ensure schema exists on startup
+        if (_options.AutoCreateSchema)
+        {
+            try
+            {
+                await _provider.EnsureSchemaAsync(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to ensure message store schema");
+                throw;
+            }
+        }
+
+        _logger.LogInformation("Outbox processor started with interval {Interval}ms",
             _options.ProcessingInterval.TotalMilliseconds);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -39,9 +73,10 @@ public class OutboxProcessor(
             {
                 await ProcessBatchAsync(stoppingToken);
 
-                if (_options.AutoCleanup)
+                if (_options.AutoCleanup && ShouldRunCleanup())
                 {
                     await CleanupAsync(stoppingToken);
+                    _lastCleanupTime = DateTime.UtcNow;
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -50,7 +85,7 @@ public class OutboxProcessor(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error processing outbox batch");
+                _logger.LogError(ex, "Error processing outbox batch");
             }
 
             try
@@ -63,15 +98,17 @@ public class OutboxProcessor(
             }
         }
 
-        logger.LogInformation("Outbox processor stopped");
+        _logger.LogInformation("Outbox processor stopped");
+    }
+
+    private bool ShouldRunCleanup()
+    {
+        return DateTime.UtcNow - _lastCleanupTime >= _options.CleanupInterval;
     }
 
     private async Task ProcessBatchAsync(CancellationToken cancellationToken)
     {
-        using var scope = scopeFactory.CreateScope();
-        var repository = scope.ServiceProvider.GetRequiredService<IOutboxRepository>();
-
-        var messages = await repository.AcquireLockAsync(
+        var messages = await _repository.AcquireLockAsync(
             _options.BatchSize,
             _options.LockDuration,
             cancellationToken);
@@ -79,58 +116,41 @@ public class OutboxProcessor(
         if (messages.Count == 0)
             return;
 
-        logger.LogDebug("Processing {Count} outbox messages", messages.Count);
+        _logger.LogDebug("Processing {Count} outbox messages", messages.Count);
 
         foreach (var message in messages)
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            await ProcessMessageAsync(repository, message, cancellationToken);
+            await ProcessMessageAsync(message, cancellationToken);
         }
-
-        await repository.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task ProcessMessageAsync(IOutboxRepository repository, OutboxMessage message, CancellationToken cancellationToken)
+    private async Task ProcessMessageAsync(MessageStoreEntry message, CancellationToken cancellationToken)
     {
         try
         {
             if (message.RetryCount >= _options.MaxRetryAttempts)
             {
-                logger.LogWarning("Message {MessageId} exceeded max retry attempts, marking as failed", message.Id);
-                await repository.MarkAsFailedAsync(message.Id, "Max retry attempts exceeded", cancellationToken);
+                _logger.LogWarning("Message {MessageId} exceeded max retry attempts, marking as failed", message.Id);
+                await _repository.MarkAsFailedAsync(message.Id, "Max retry attempts exceeded", cancellationToken);
                 return;
             }
 
-            var options = new PublishOptions
-            {
-                ExchangeName = message.ExchangeName,
-                RoutingKey = message.RoutingKey,
-                Headers = message.Headers != null
-                    ? JsonSerializer.Deserialize<Dictionary<string, object>>(message.Headers)
-                    : null
-            };
+            await PublishRawAsync(message, cancellationToken);
 
-            // Use the internal direct publisher, not the outbox publisher
-            var directPublisher = (((publisher as RabbitMqPublisher)));
-            if (directPublisher != null)
-            {
-                // We need to publish raw - create a wrapper for this
-                await PublishRawAsync(message, options, cancellationToken);
-            }
-
-            await repository.MarkAsPublishedAsync(message.Id, cancellationToken);
-            logger.LogDebug("Published outbox message {MessageId}", message.Id);
+            await _repository.MarkAsPublishedAsync(message.Id, cancellationToken);
+            _logger.LogDebug("Published outbox message {MessageId}", message.Id);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error publishing outbox message {MessageId}", message.Id);
-            await repository.MarkAsFailedAsync(message.Id, ex.Message, cancellationToken);
+            _logger.LogError(ex, "Error publishing outbox message {MessageId}", message.Id);
+            await _repository.MarkAsFailedAsync(message.Id, ex.Message, cancellationToken);
         }
     }
 
-    private async Task PublishRawAsync(OutboxMessage message, PublishOptions options, CancellationToken cancellationToken)
+    private async Task PublishRawAsync(MessageStoreEntry message, CancellationToken cancellationToken)
     {
         if (message.Payload == null || message.Payload.Length == 0)
             throw new ArgumentException($"Outbox message {message.Id} has empty payload.");
@@ -160,16 +180,15 @@ public class OutboxProcessor(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to deserialize headers for outbox message {MessageId}", message.Id);
+                _logger.LogWarning(ex, "Failed to deserialize headers for outbox message {MessageId}", message.Id);
             }
         }
 
         context.Headers["message-type"] = message.MessageType;
         context.Headers["message-id"] = message.Id.ToString();
 
-        if (publisher is RabbitMqPublisher directPublisher)
+        if (_publisher is RabbitMqPublisher directPublisher)
         {
-
             await directPublisher.PublishToRabbitMqAsync(context, cancellationToken);
         }
         else
@@ -182,17 +201,14 @@ public class OutboxProcessor(
     {
         try
         {
-            using var scope = scopeFactory.CreateScope();
+            await _inboxRepository.CleanupAsync(_options.RetentionPeriod, cancellationToken);
+            await _repository.CleanupAsync(_options.RetentionPeriod, cancellationToken);
 
-            var outBoxRepository = scope.ServiceProvider.GetRequiredService<IOutboxRepository>();
-            var inboxRepository = scope.ServiceProvider.GetRequiredService<IInboxRepository>();
-
-            await inboxRepository.CleanupAsync(_options.RetentionPeriod, cancellationToken);
-            await outBoxRepository.CleanupAsync(_options.RetentionPeriod, cancellationToken);
+            _logger.LogDebug("Completed message store cleanup");
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Error during outbox cleanup");
+            _logger.LogWarning(ex, "Error during message store cleanup");
         }
     }
 }

@@ -1,6 +1,8 @@
 using Donakunn.MessagingOverQueue.DependencyInjection;
 using Donakunn.MessagingOverQueue.Topology.Abstractions;
 using Donakunn.MessagingOverQueue.Topology.Builders;
+using Donakunn.MessagingOverQueue.Abstractions.Serialization;
+using Donakunn.MessagingOverQueue.Persistence.Providers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -38,6 +40,12 @@ internal sealed class TopologyInitializationHostedService : IHostedService
 
         // Initialize handler invokers
         InitializeHandlerInvokers();
+
+        // Initialize message type registrations for deserialization
+        InitializeMessageTypeRegistrations();
+
+        // Initialize message store schema if provider is registered
+        await InitializeMessageStoreSchemaAsync(cancellationToken);
 
         // Register topologies from discovery result
         if (discoveryResult != null)
@@ -86,6 +94,47 @@ internal sealed class TopologyInitializationHostedService : IHostedService
         }
 
         _logger.LogDebug("Initialized {Count} handler invokers", registrations.Count());
+    }
+
+    /// <summary>
+    /// Initializes message type registrations for deserialization.
+    /// </summary>
+    private void InitializeMessageTypeRegistrations()
+    {
+        var resolver = _serviceProvider.GetRequiredService<IMessageTypeResolver>();
+        var registrations = _serviceProvider.GetServices<IMessageTypeRegistration>();
+
+        foreach (var registration in registrations)
+        {
+            registration.Register(resolver);
+        }
+
+        _logger.LogDebug("Initialized {Count} message type registrations", registrations.Count());
+    }
+
+    /// <summary>
+    /// Initializes the message store schema if a provider is registered.
+    /// This ensures the schema exists before consumers start processing messages.
+    /// </summary>
+    private async Task InitializeMessageStoreSchemaAsync(CancellationToken cancellationToken)
+    {
+        var provider = _serviceProvider.GetService<IMessageStoreProvider>();
+        if (provider == null)
+        {
+            _logger.LogDebug("No message store provider registered, skipping schema initialization");
+            return;
+        }
+
+        try
+        {
+            await provider.EnsureSchemaAsync(cancellationToken);
+            _logger.LogDebug("Message store schema initialized");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize message store schema");
+            throw;
+        }
     }
 
     /// <summary>

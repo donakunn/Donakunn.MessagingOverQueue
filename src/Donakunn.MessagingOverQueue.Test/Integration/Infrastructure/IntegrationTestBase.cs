@@ -1,6 +1,6 @@
 using Donakunn.MessagingOverQueue.DependencyInjection;
+using Donakunn.MessagingOverQueue.Persistence.DependencyInjection;
 using Donakunn.MessagingOverQueue.Topology.DependencyInjection;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -73,19 +73,12 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         ConfigureServices(services);
         ServiceProvider = services.BuildServiceProvider();
 
-        // Apply migrations
-        await ApplyMigrationsAsync();
-
         // Additional setup
         await OnInitializeAsync();
     }
 
     protected virtual void ConfigureServices(IServiceCollection services)
     {
-        // Register DbContext
-        services.AddDbContext<TestDbContext>(options =>
-            options.UseSqlServer(ConnectionString));
-
         // Add logging
         services.AddLogging(builder => builder
             .SetMinimumLevel(LogLevel.Debug)
@@ -102,13 +95,6 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         await Task.CompletedTask;
     }
 
-    private async Task ApplyMigrationsAsync()
-    {
-        using var scope = ServiceProvider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
-        await dbContext.Database.EnsureCreatedAsync();
-    }
-
     protected async Task<T> ExecuteInScopeAsync<T>(Func<IServiceProvider, Task<T>> action)
     {
         using var scope = ServiceProvider.CreateScope();
@@ -119,11 +105,6 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     {
         using var scope = ServiceProvider.CreateScope();
         await action(scope.ServiceProvider);
-    }
-
-    protected T GetService<T>() where T : notnull
-    {
-        return ServiceProvider.GetRequiredService<T>();
     }
 
     /// <summary>

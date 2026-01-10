@@ -58,13 +58,15 @@ internal sealed class HandlerInvoker<TMessage> : IHandlerInvoker
 
             if (idempotencyContext != null)
             {
-                // Check if this specific handler already processed this message
-                var alreadyProcessed = await idempotencyContext.InboxRepository.HasBeenProcessedAsync(
-                    message.Id,
+                // Atomically try to mark as processed before invoking the handler.
+                // This prevents race conditions where multiple instances of the same message
+                // could be processed simultaneously.
+                var wasMarked = await idempotencyContext.InboxRepository.TryMarkAsProcessedAsync(
+                    message,
                     handlerType,
                     cancellationToken);
 
-                if (alreadyProcessed)
+                if (!wasMarked)
                 {
                     idempotencyContext.Logger.LogDebug(
                         "Message {MessageId} already processed by {HandlerType}, skipping",
@@ -77,16 +79,10 @@ internal sealed class HandlerInvoker<TMessage> : IHandlerInvoker
             // Invoke the handler
             await handler.HandleAsync((TMessage)message, context, cancellationToken);
 
-            // Mark as processed after successful handling
             if (idempotencyContext != null)
             {
-                await idempotencyContext.InboxRepository.MarkAsProcessedAsync(
-                    message,
-                    handlerType,
-                    cancellationToken);
-
                 idempotencyContext.Logger.LogDebug(
-                    "Message {MessageId} marked as processed by {HandlerType}",
+                    "Message {MessageId} processed by {HandlerType}",
                     message.Id,
                     handlerType);
             }
