@@ -55,7 +55,7 @@ public sealed class OutboxPublisher : IMessagePublisher, IEventPublisher, IComma
             exchangeName,
             routingKey,
             queueName,
-            options.Headers != null ? JsonSerializer.Serialize(options.Headers) : null,
+            options.Headers != null ? JsonSerializer.Serialize(options.Headers, Abstractions.Serialization.InternalJsonContext.Default.DictionaryStringString) : null,
             message.CorrelationId);
 
         await _repository.AddAsync(entry, cancellationToken);

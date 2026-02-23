@@ -375,7 +375,7 @@ public abstract class RedisStreamsIntegrationTestBase : IAsyncLifetime
 /// </summary>
 internal sealed class TestContextPropagationMiddleware(TestExecutionContext testContext) : IConsumeMiddleware
 {
-    public async Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
     {
         // Set the test context in AsyncLocal before invoking the handler
         var previousContext = TestExecutionContextAccessor.Current;

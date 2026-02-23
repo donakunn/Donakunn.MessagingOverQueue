@@ -10,7 +10,7 @@ public class MessageContext(
     string? causationId = null,
     string? exchangeName = null,
     string? routingKey = null,
-    IReadOnlyDictionary<string, object>? headers = null,
+    IReadOnlyDictionary<string, string>? headers = null,
     int deliveryCount = 1) : IMessageContext
 {
     private readonly Dictionary<string, object> _data = new();
@@ -21,7 +21,7 @@ public class MessageContext(
     public string QueueName { get; } = queueName;
     public string? ExchangeName { get; } = exchangeName;
     public string? RoutingKey { get; } = routingKey;
-    public IReadOnlyDictionary<string, object> Headers { get; } = headers ?? new Dictionary<string, object>();
+    public IReadOnlyDictionary<string, string> Headers { get; } = headers ?? new Dictionary<string, string>();
     public int DeliveryCount { get; } = deliveryCount;
     public DateTime ReceivedAt { get; } = DateTime.UtcNow;
 

@@ -220,7 +220,7 @@ internal sealed class TestContextPropagationMiddleware : IConsumeMiddleware
         _testContext = testContext;
     }
 
-    public async Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
     {
         var previousContext = Shared.Infrastructure.TestExecutionContextAccessor.Current;
         Shared.Infrastructure.TestExecutionContextAccessor.Current = _testContext;

@@ -14,7 +14,7 @@ public interface IConsumeMiddleware
     /// <param name="context">The consume context.</param>
     /// <param name="next">The next middleware in the pipeline.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken);
+    ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -55,7 +55,7 @@ public class ConsumeContext
     /// <summary>
     /// Headers from the message properties.
     /// </summary>
-    public IReadOnlyDictionary<string, object> Headers { get; init; } = new Dictionary<string, object>();
+    public IReadOnlyDictionary<string, string> Headers { get; init; } = new Dictionary<string, string>();
 
     /// <summary>
     /// Content type.

@@ -96,7 +96,7 @@ public interface IMessageContext
     /// <summary>
     /// Headers associated with the message.
     /// </summary>
-    IReadOnlyDictionary<string, object> Headers { get; }
+    IReadOnlyDictionary<string, string> Headers { get; }
 
     /// <summary>
     /// The number of times this message has been delivered.

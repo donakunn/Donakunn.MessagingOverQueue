@@ -23,9 +23,9 @@ public class IdempotencyMiddleware(
     /// </summary>
     internal const string LoggerKey = "IdempotencyMiddleware.Logger";
 
-    public async Task InvokeAsync(
+    public async ValueTask InvokeAsync(
         ConsumeContext context,
-        Func<ConsumeContext, CancellationToken, Task> next,
+        Func<ConsumeContext, CancellationToken, ValueTask> next,
         CancellationToken cancellationToken)
     {
         // Store the inbox repository and logger in context for use by HandlerInvoker.

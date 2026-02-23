@@ -18,7 +18,7 @@ public class RetryMiddleware(
     /// <inheritdoc />
     public int Order => MiddlewareOrder.Retry;
 
-    public async Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
     {
         var attempt = 0;
 

@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Donakunn.MessagingOverQueue.Abstractions.Messages;
 
 /// <summary>
@@ -5,6 +7,8 @@ namespace Donakunn.MessagingOverQueue.Abstractions.Messages;
 /// </summary>
 public abstract record MessageBase : IMessage
 {
+    private static readonly ConcurrentDictionary<Type, string> MessageTypeNameCache = new();
+
     /// <inheritdoc />
     public Guid Id { get; init; } = Guid.NewGuid();
 
@@ -18,7 +22,9 @@ public abstract record MessageBase : IMessage
     public string? CausationId { get; init; }
 
     /// <inheritdoc />
-    public virtual string MessageType => GetType().AssemblyQualifiedName ?? GetType().FullName ?? GetType().Name;
+    public virtual string MessageType => MessageTypeNameCache.GetOrAdd(
+        GetType(),
+        type => type.AssemblyQualifiedName ?? type.FullName ?? type.Name);
 
     /// <summary>
     /// Creates a new message with the specified correlation ID.

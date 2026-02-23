@@ -33,10 +33,10 @@ public class DeadLetterHandler(
         {
             ExchangeName = deadLetterExchange,
             RoutingKey = message.MessageType,
-            Headers = new Dictionary<string, object>
+            Headers = new Dictionary<string, string>
             {
                 ["x-death-reason"] = exception.Message,
-                ["x-death-count"] = retryCount,
+                ["x-death-count"] = retryCount.ToString(),
                 ["x-original-message-id"] = message.Id.ToString(),
                 ["x-death-timestamp"] = DateTime.UtcNow.ToString("O")
             }

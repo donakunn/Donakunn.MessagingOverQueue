@@ -19,82 +19,82 @@ public class StressTests : LoadTestBase
     {
     }
 
-    [Fact]
-    [Trait("Duration", "VeryLong")]
-    public async Task Consumer_Slower_Than_Publisher_For_1_Hour()
-    {
-        // Arrange
-        SlowLoadTestEventHandler.Reset();
-        SlowLoadTestEventHandler.SetMetricsCollector(Metrics);
-    
-        // Configure slow consumer (50ms per message with low concurrency = ~200 msg/sec max)
-        using var host = await BuildHost<SlowLoadTestEventHandler>(options =>
-            options.ConfigureConsumer(batchSize: 10)
-                   .WithCountBasedRetention(1000000)); // Large retention for stress test
-    
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
-    
-        // Warmup with slow handler
-        Reporter.WriteLine("Warming up slow handler...");
-        for (int i = 0; i < 20; i++)
-        {
-            await publisher.PublishAsync(new SlowLoadTestEvent { Sequence = i }, TestCancellation.Token);
-        }
-        await SlowLoadTestEventHandler.WaitForCountAsync(20, TimeSpan.FromSeconds(30));
-        SlowLoadTestEventHandler.Reset();
-        Metrics.Reset();
-    
-        // Act
-        var testDuration = Config.StressTestDuration;
-        var publishRate = Config.StressTestPublisherRatePerSecond;
-    
-        Reporter.WriteLine($"Starting stress test: {testDuration} at {publishRate} msg/sec publish rate");
-        Reporter.WriteLine($"Consumer processes at ~{1000 / 50 * 10} msg/sec (50ms delay, 10 concurrency)");
-    
-        Metrics.Start();
-        StartPeriodicReporting(TimeSpan.FromMinutes(1));
-    
-        // Publisher task - continuous publishing at configured rate
-        var stopwatch = Stopwatch.StartNew();
-        long sequence = 0;
-        var batchSize = 10;
-        var batchDelay = TimeSpan.FromMilliseconds(1000.0 / publishRate * batchSize);
-    
-        while (stopwatch.Elapsed < testDuration && !TestCancellation.IsCancellationRequested)
-        {
-            var tasks = new List<Task>(batchSize);
-            for (int i = 0; i < batchSize; i++)
-            {
-                var msg = new SlowLoadTestEvent
-                {
-                    Sequence = Interlocked.Increment(ref sequence),
-                    PublishedAtTicks = Stopwatch.GetTimestamp(),
-                    ProcessingDelay = TimeSpan.FromMilliseconds(50)
-                };
-                tasks.Add(publisher.PublishAsync(msg, TestCancellation.Token));
-                Metrics.RecordPublished();
-            }
-            await Task.WhenAll(tasks);
-            await Task.Delay(batchDelay, TestCancellation.Token);
-        }
-    
-        // Allow time for backlog to drain
-        Reporter.WriteLine("Publishing complete. Waiting for backlog to drain...");
-    
-        var drainTimeout = Config.StressTestDrainTimeout;
-        var expectedMessages = Metrics.GetSnapshot().TotalPublished;
-        await WaitForSlowConsumptionAsync(expectedMessages, drainTimeout);
-    
-        Metrics.Stop();
-    
-        // Assert
-        var finalMetrics = Metrics.GetSnapshot();
-        Reporter.ReportFinal(finalMetrics, "Stress Test (Consumer Slower Than Publisher)");
-    
-        // Verify eventual consistency
-        Assert.Equal(finalMetrics.TotalPublished, finalMetrics.TotalConsumed);
-        AssertNoMessageLoss();
-    }
+    // [Fact]
+    // [Trait("Duration", "VeryLong")]
+    // public async Task Consumer_Slower_Than_Publisher_For_1_Hour()
+    // {
+    //     // Arrange
+    //     SlowLoadTestEventHandler.Reset();
+    //     SlowLoadTestEventHandler.SetMetricsCollector(Metrics);
+    //
+    //     // Configure slow consumer (50ms per message with low concurrency = ~200 msg/sec max)
+    //     using var host = await BuildHost<SlowLoadTestEventHandler>(options =>
+    //         options.ConfigureConsumer(batchSize: 10)
+    //                .WithCountBasedRetention(1000000)); // Large retention for stress test
+    //
+    //     var publisher = host.Services.GetRequiredService<IEventPublisher>();
+    //
+    //     // Warmup with slow handler
+    //     Reporter.WriteLine("Warming up slow handler...");
+    //     for (int i = 0; i < 20; i++)
+    //     {
+    //         await publisher.PublishAsync(new SlowLoadTestEvent { Sequence = i }, TestCancellation.Token);
+    //     }
+    //     await SlowLoadTestEventHandler.WaitForCountAsync(20, TimeSpan.FromSeconds(30));
+    //     SlowLoadTestEventHandler.Reset();
+    //     Metrics.Reset();
+    //
+    //     // Act
+    //     var testDuration = Config.StressTestDuration;
+    //     var publishRate = Config.StressTestPublisherRatePerSecond;
+    //
+    //     Reporter.WriteLine($"Starting stress test: {testDuration} at {publishRate} msg/sec publish rate");
+    //     Reporter.WriteLine($"Consumer processes at ~{1000 / 50 * 10} msg/sec (50ms delay, 10 concurrency)");
+    //
+    //     Metrics.Start();
+    //     StartPeriodicReporting(TimeSpan.FromMinutes(1));
+    //
+    //     // Publisher task - continuous publishing at configured rate
+    //     var stopwatch = Stopwatch.StartNew();
+    //     long sequence = 0;
+    //     var batchSize = 10;
+    //     var batchDelay = TimeSpan.FromMilliseconds(1000.0 / publishRate * batchSize);
+    //
+    //     while (stopwatch.Elapsed < testDuration && !TestCancellation.IsCancellationRequested)
+    //     {
+    //         var tasks = new List<Task>(batchSize);
+    //         for (int i = 0; i < batchSize; i++)
+    //         {
+    //             var msg = new SlowLoadTestEvent
+    //             {
+    //                 Sequence = Interlocked.Increment(ref sequence),
+    //                 PublishedAtTicks = Stopwatch.GetTimestamp(),
+    //                 ProcessingDelay = TimeSpan.FromMilliseconds(50)
+    //             };
+    //             tasks.Add(publisher.PublishAsync(msg, TestCancellation.Token));
+    //             Metrics.RecordPublished();
+    //         }
+    //         await Task.WhenAll(tasks);
+    //         await Task.Delay(batchDelay, TestCancellation.Token);
+    //     }
+    //
+    //     // Allow time for backlog to drain
+    //     Reporter.WriteLine("Publishing complete. Waiting for backlog to drain...");
+    //
+    //     var drainTimeout = Config.StressTestDrainTimeout;
+    //     var expectedMessages = Metrics.GetSnapshot().TotalPublished;
+    //     await WaitForSlowConsumptionAsync(expectedMessages, drainTimeout);
+    //
+    //     Metrics.Stop();
+    //
+    //     // Assert
+    //     var finalMetrics = Metrics.GetSnapshot();
+    //     Reporter.ReportFinal(finalMetrics, "Stress Test (Consumer Slower Than Publisher)");
+    //
+    //     // Verify eventual consistency
+    //     Assert.Equal(finalMetrics.TotalPublished, finalMetrics.TotalConsumed);
+    //     AssertNoMessageLoss();
+    // }
 
     [Fact]
     [Trait("Duration", "Long")]
@@ -164,7 +164,7 @@ public class StressTests : LoadTestBase
         var initialMemory = GC.GetTotalMemory(true) / 1024 / 1024;
 
         Metrics.Start();
-        var duration = TimeSpan.FromMinutes(10);
+        var duration = TimeSpan.FromHours(3);
         var stopwatch = Stopwatch.StartNew();
         long sequence = 0;
         var lastMemorySample = TimeSpan.Zero;

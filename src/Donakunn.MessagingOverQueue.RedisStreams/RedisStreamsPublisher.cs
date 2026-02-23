@@ -36,47 +36,20 @@ public sealed class RedisStreamsPublisher : IInternalPublisher
 
         var streamKey = BuildStreamKey(context);
         var db = _connectionPool.GetDatabase();
+        var entries = BuildStreamEntries(context);
 
-        // Extract message ID - store our GUID in the payload (Redis generates stream entry ID)
-        var messageId = context.Message?.Id.ToString()
-            ?? GetHeaderValue(context.Headers, "message-id")
-            ?? Guid.NewGuid().ToString();
-
-        var correlationId = context.Message?.CorrelationId
-            ?? GetHeaderValue(context.Headers, "correlation-id");
-
-        var causationId = context.Message?.CausationId
-            ?? GetHeaderValue(context.Headers, "causation-id");
-
-        var messageType = context.MessageType?.AssemblyQualifiedName
-            ?? context.MessageType?.FullName
-            ?? GetHeaderValue(context.Headers, "message-type")
+        var messageId = GetHeaderValue(context.Headers, "message-id")
+            ?? context.Message?.Id.ToString()
             ?? "unknown";
-
-        // Build stream entry values
-        var entries = new NameValueEntry[]
-        {
-            new("message-id", messageId),
-            new("message-type", messageType),
-            new("body", context.Body ?? Array.Empty<byte>()),
-            new("headers", SerializeHeaders(context.Headers)),
-            new("timestamp", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()),
-            new("correlation-id", correlationId ?? string.Empty),
-            new("causation-id", causationId ?? string.Empty),
-            new("content-type", context.ContentType ?? "application/json"),
-            new("persistent", context.Persistent.ToString())
-        };
 
         try
         {
-            // Determine trimming strategy
             var redisStreamId = await AddToStreamAsync(db, streamKey, entries, cancellationToken);
 
             _logger.LogDebug(
                 "Published message {MessageId} to stream '{StreamKey}' with entry ID {EntryId}",
                 messageId, streamKey, redisStreamId);
 
-            // Apply time-based trimming if configured (done asynchronously for performance)
             if (_options.RetentionStrategy == StreamRetentionStrategy.TimeBased)
             {
                 _ = TrimByTimeAsync(db, streamKey);
@@ -178,28 +151,30 @@ public sealed class RedisStreamsPublisher : IInternalPublisher
             ?? Guid.NewGuid().ToString();
 
         var correlationId = context.Message?.CorrelationId
-            ?? GetHeaderValue(context.Headers, "correlation-id");
+            ?? GetHeaderValue(context.Headers, "correlation-id")
+            ?? string.Empty;
 
         var causationId = context.Message?.CausationId
-            ?? GetHeaderValue(context.Headers, "causation-id");
+            ?? GetHeaderValue(context.Headers, "causation-id")
+            ?? string.Empty;
 
         var messageType = context.MessageType?.AssemblyQualifiedName
             ?? context.MessageType?.FullName
             ?? GetHeaderValue(context.Headers, "message-type")
             ?? "unknown";
 
-        return new NameValueEntry[]
-        {
+        return
+        [
             new("message-id", messageId),
             new("message-type", messageType),
-            new("body", context.Body ?? Array.Empty<byte>()),
+            new("body", context.Body ?? []),
             new("headers", SerializeHeaders(context.Headers)),
             new("timestamp", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()),
-            new("correlation-id", correlationId ?? string.Empty),
-            new("causation-id", causationId ?? string.Empty),
+            new("correlation-id", correlationId),
+            new("causation-id", causationId),
             new("content-type", context.ContentType ?? "application/json"),
-            new("persistent", context.Persistent.ToString())
-        };
+            new("persistent", context.Persistent ? "True" : "False")
+        ];
     }
 
     private async Task<RedisValue> AddToStreamAsync(
@@ -286,25 +261,16 @@ public sealed class RedisStreamsPublisher : IInternalPublisher
         return $"{_options.StreamPrefix}:{streamName}";
     }
 
-    private static string? GetHeaderValue(Dictionary<string, object?> headers, string key)
+    private static string? GetHeaderValue(Dictionary<string, string> headers, string key)
     {
-        if (headers.TryGetValue(key, out var value))
-        {
-            return value?.ToString();
-        }
-        return null;
+        return headers.TryGetValue(key, out var value) ? value : null;
     }
 
-    private static string SerializeHeaders(Dictionary<string, object?> headers)
+    private static string SerializeHeaders(Dictionary<string, string> headers)
     {
         if (headers.Count == 0)
             return "{}";
 
-        // Convert to string dictionary for serialization
-        var stringHeaders = headers
-            .Where(h => h.Value != null)
-            .ToDictionary(h => h.Key, h => h.Value?.ToString() ?? string.Empty);
-
-        return JsonSerializer.Serialize(stringHeaders);
+        return JsonSerializer.Serialize(headers, Serialization.InternalJsonContext.Default.DictionaryStringString);
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Donakunn.MessagingOverQueue.Abstractions.Consuming;
 using Donakunn.MessagingOverQueue.Abstractions.Messages;
 using Donakunn.MessagingOverQueue.Consuming.Middleware;
@@ -40,6 +41,8 @@ public interface IHandlerInvoker
 internal sealed class HandlerInvoker<TMessage> : IHandlerInvoker
     where TMessage : IMessage
 {
+    private static readonly ConcurrentDictionary<Type, string> HandlerTypeNameCache = new();
+
     public Type MessageType => typeof(TMessage);
 
     public async Task InvokeAsync(
@@ -54,8 +57,10 @@ internal sealed class HandlerInvoker<TMessage> : IHandlerInvoker
 
         foreach (var handler in handlers)
         {
-            var type = handler.GetType();
-            var handlerType = type.FullName ?? type.Name;
+            // Cache handler type name to avoid per-message reflection
+            var handlerType = HandlerTypeNameCache.GetOrAdd(
+                handler.GetType(),
+                type => type.FullName ?? type.Name);
 
             if (idempotencyContext != null)
             {

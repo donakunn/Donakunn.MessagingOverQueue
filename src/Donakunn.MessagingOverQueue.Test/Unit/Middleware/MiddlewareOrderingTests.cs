@@ -156,7 +156,7 @@ public class MiddlewareOrderingTests
             Body = [],
             DeliveryTag = 1,
             MessageContext = new FakeMessageContext(),
-            Headers = new Dictionary<string, object>()
+            Headers = new Dictionary<string, string>()
         };
     }
 
@@ -166,7 +166,7 @@ public class MiddlewareOrderingTests
     {
         public int Order => order;
 
-        public Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+        public ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
         {
             executionOrder.Add(order);
             return next(context, cancellationToken);
@@ -175,7 +175,7 @@ public class MiddlewareOrderingTests
 
     private class UnorderedTestMiddleware(string name, List<string> executionOrder) : IConsumeMiddleware
     {
-        public Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+        public ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
         {
             executionOrder.Add(name);
             return next(context, cancellationToken);
@@ -186,7 +186,7 @@ public class MiddlewareOrderingTests
     {
         public int Order => order;
 
-        public Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+        public ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
         {
             executionOrder.Add(name);
             return next(context, cancellationToken);
@@ -195,7 +195,7 @@ public class MiddlewareOrderingTests
 
     private class CountingMiddleware(Action increment) : IConsumeMiddleware
     {
-        public Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+        public ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
         {
             increment();
             return next(context, cancellationToken);
@@ -212,7 +212,7 @@ public class MiddlewareOrderingTests
         public string QueueName => "test-queue";
         public string? ExchangeName => "test-exchange";
         public string? RoutingKey => "test-routing-key";
-        public IReadOnlyDictionary<string, object> Headers => new Dictionary<string, object>();
+        public IReadOnlyDictionary<string, string> Headers => new Dictionary<string, string>();
         public int DeliveryCount => 1;
         public DateTime ReceivedAt => DateTime.UtcNow;
 

@@ -12,8 +12,8 @@ namespace Donakunn.MessagingOverQueue.RedisStreams;
 internal sealed class RedisStreamsMessagePublisher : IMessagePublisher, IEventPublisher, ICommandSender
 {
     private readonly RedisStreamsPublisher _publisher;
-    private readonly IEnumerable<IPublishMiddleware> _middlewares;
     private readonly IMessageRoutingResolver _routingResolver;
+    private readonly Func<PublishContext, CancellationToken, Task> _pipeline;
 
     public RedisStreamsMessagePublisher(
         RedisStreamsPublisher publisher,
@@ -21,8 +21,11 @@ internal sealed class RedisStreamsMessagePublisher : IMessagePublisher, IEventPu
         IMessageRoutingResolver routingResolver)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
-        _middlewares = middlewares ?? throw new ArgumentNullException(nameof(middlewares));
+        ArgumentNullException.ThrowIfNull(middlewares);
         _routingResolver = routingResolver ?? throw new ArgumentNullException(nameof(routingResolver));
+
+        // Build pipeline once — all publish middlewares are singletons
+        _pipeline = PublishPipeline.Build(middlewares, _publisher.PublishAsync);
     }
 
     /// <inheritdoc />
@@ -38,10 +41,11 @@ internal sealed class RedisStreamsMessagePublisher : IMessagePublisher, IEventPu
     /// <inheritdoc />
     public async Task PublishAsync<T>(T message, PublishOptions options, CancellationToken cancellationToken = default) where T : IMessage
     {
-        // Use routing resolver for defaults if not explicitly specified
-        var exchangeName = options.ExchangeName ?? _routingResolver.GetExchangeName<T>();
-        var routingKey = options.RoutingKey ?? _routingResolver.GetRoutingKey<T>();
-        var queueName = _routingResolver.GetQueueName<T>();
+        // Single cached lookup instead of 3 separate topology lookups
+        var routing = _routingResolver.ResolveRouting<T>();
+        var exchangeName = options.ExchangeName ?? routing.ExchangeName;
+        var routingKey = options.RoutingKey ?? routing.RoutingKey;
+        var queueName = routing.QueueName;
 
         var context = new PublishContext
         {
@@ -65,23 +69,21 @@ internal sealed class RedisStreamsMessagePublisher : IMessagePublisher, IEventPu
             }
         }
 
-        var pipeline = new PublishPipeline(_middlewares, _publisher.PublishAsync);
-        await pipeline.ExecuteAsync(context, cancellationToken);
+        await _pipeline(context, cancellationToken);
     }
 
     /// <inheritdoc />
     public Task PublishAsync<T>(T @event, CancellationToken cancellationToken = default) where T : IEvent
     {
-        var exchangeName = _routingResolver.GetExchangeName<T>();
-        var routingKey = _routingResolver.GetRoutingKey<T>();
-        return PublishAsync(@event, exchangeName, routingKey, cancellationToken);
+        var routing = _routingResolver.ResolveRouting<T>();
+        return PublishAsync(@event, routing.ExchangeName, routing.RoutingKey, cancellationToken);
     }
 
     /// <inheritdoc />
     public Task SendAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand
     {
-        var queueName = _routingResolver.GetQueueName<T>();
-        return SendAsync(command, queueName, cancellationToken);
+        var routing = _routingResolver.ResolveRouting<T>();
+        return SendAsync(command, routing.QueueName, cancellationToken);
     }
 
     /// <inheritdoc />

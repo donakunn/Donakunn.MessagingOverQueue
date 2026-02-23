@@ -1,7 +1,13 @@
+using System.Collections.Concurrent;
 using Donakunn.MessagingOverQueue.Abstractions.Messages;
 using Donakunn.MessagingOverQueue.Topology.Abstractions;
 
 namespace Donakunn.MessagingOverQueue.Topology;
+
+/// <summary>
+/// Cached routing information for a message type.
+/// </summary>
+public sealed record RoutingInfo(string ExchangeName, string QueueName, string RoutingKey);
 
 /// <summary>
 /// Resolves routing information for messages using the topology provider.
@@ -63,6 +69,20 @@ public interface IMessageRoutingResolver
     /// <param name="messageType">The message type.</param>
     /// <returns>The topology definition.</returns>
     TopologyDefinition GetTopology(Type messageType);
+
+    /// <summary>
+    /// Resolves and caches routing information for a message type.
+    /// </summary>
+    /// <typeparam name="TMessage">The message type.</typeparam>
+    /// <returns>The cached routing information.</returns>
+    RoutingInfo ResolveRouting<TMessage>() where TMessage : IMessage;
+
+    /// <summary>
+    /// Resolves and caches routing information for a message type.
+    /// </summary>
+    /// <param name="messageType">The message type.</param>
+    /// <returns>The cached routing information.</returns>
+    RoutingInfo ResolveRouting(Type messageType);
 }
 
 /// <summary>
@@ -74,6 +94,7 @@ public interface IMessageRoutingResolver
 public sealed class MessageRoutingResolver(ITopologyProvider topologyProvider) : IMessageRoutingResolver
 {
     private readonly ITopologyProvider _topologyProvider = topologyProvider ?? throw new ArgumentNullException(nameof(topologyProvider));
+    private readonly ConcurrentDictionary<Type, RoutingInfo> _routingCache = new();
 
     /// <inheritdoc />
     public string GetExchangeName<TMessage>() where TMessage : IMessage
@@ -124,5 +145,21 @@ public sealed class MessageRoutingResolver(ITopologyProvider topologyProvider) :
     public TopologyDefinition GetTopology(Type messageType)
     {
         return _topologyProvider.GetTopology(messageType);
+    }
+
+    /// <inheritdoc />
+    public RoutingInfo ResolveRouting<TMessage>() where TMessage : IMessage
+    {
+        return ResolveRouting(typeof(TMessage));
+    }
+
+    /// <inheritdoc />
+    public RoutingInfo ResolveRouting(Type messageType)
+    {
+        return _routingCache.GetOrAdd(messageType, type =>
+        {
+            var topology = _topologyProvider.GetTopology(type);
+            return new RoutingInfo(topology.Exchange.Name, topology.Queue.Name, topology.RoutingKey);
+        });
     }
 }

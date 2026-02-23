@@ -9,7 +9,8 @@ public class PublishPipeline
 
     public PublishPipeline(IEnumerable<IPublishMiddleware> middlewares, Func<PublishContext, CancellationToken, Task> terminalHandler)
     {
-        _pipeline = BuildPipeline(middlewares, terminalHandler);
+        var valuePipeline = BuildPipeline(middlewares, (ctx, ct) => new ValueTask(terminalHandler(ctx, ct)));
+        _pipeline = (ctx, ct) => valuePipeline(ctx, ct).AsTask();
     }
 
     /// <summary>
@@ -20,11 +21,23 @@ public class PublishPipeline
         return _pipeline(context, cancellationToken);
     }
 
-    private static Func<PublishContext, CancellationToken, Task> BuildPipeline(
+    /// <summary>
+    /// Builds a reusable pipeline delegate from the given middlewares and terminal handler.
+    /// Call once at startup and reuse the returned delegate for all publishes.
+    /// </summary>
+    public static Func<PublishContext, CancellationToken, Task> Build(
         IEnumerable<IPublishMiddleware> middlewares,
         Func<PublishContext, CancellationToken, Task> terminalHandler)
     {
-        Func<PublishContext, CancellationToken, Task> current = terminalHandler;
+        var valuePipeline = BuildPipeline(middlewares, (ctx, ct) => new ValueTask(terminalHandler(ctx, ct)));
+        return (ctx, ct) => valuePipeline(ctx, ct).AsTask();
+    }
+
+    private static Func<PublishContext, CancellationToken, ValueTask> BuildPipeline(
+        IEnumerable<IPublishMiddleware> middlewares,
+        Func<PublishContext, CancellationToken, ValueTask> terminalHandler)
+    {
+        Func<PublishContext, CancellationToken, ValueTask> current = terminalHandler;
 
         foreach (var middleware in middlewares.Reverse())
         {
@@ -36,4 +49,3 @@ public class PublishPipeline
         return current;
     }
 }
-

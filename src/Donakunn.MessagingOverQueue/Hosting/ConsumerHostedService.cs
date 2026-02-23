@@ -1,6 +1,7 @@
 using Donakunn.MessagingOverQueue.Configuration.Options;
 using Donakunn.MessagingOverQueue.Consuming.Handlers;
 using Donakunn.MessagingOverQueue.Consuming.Middleware;
+using Donakunn.MessagingOverQueue.Persistence.Repositories;
 using Donakunn.MessagingOverQueue.Providers;
 using Donakunn.MessagingOverQueue.Topology.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
@@ -109,28 +110,31 @@ public sealed class ConsumerHostedService : IHostedService, IAsyncDisposable
     private Func<ConsumeContext, CancellationToken, Task> CreateMessageHandler(
         IHandlerInvokerRegistry handlerInvokerRegistry)
     {
-        return async (context, cancellationToken) =>
+        // Resolve middlewares from a temporary scope to avoid root-provider scope validation errors.
+        // IdempotencyMiddleware is scoped (depends on IInboxRepository) — we exclude it here
+        // and handle its context.Data population in the terminal handler instead.
+        List<IConsumeMiddleware> middlewares;
+        using (var scope = _serviceProvider.CreateScope())
         {
-            // Create a scope to resolve middlewares with scoped dependencies
-            using var scope = _serviceProvider.CreateScope();
-            var scopedProvider = scope.ServiceProvider;
-            var middlewares = scopedProvider.GetServices<IConsumeMiddleware>();
+            middlewares = scope.ServiceProvider.GetServices<IConsumeMiddleware>()
+                .Where(m => m is not IdempotencyMiddleware)
+                .ToList();
+        }
 
-            var pipeline = new ConsumePipeline(
-                middlewares,
-                (ctx, ct) => InvokeHandlerAsync(ctx, ct, scopedProvider, handlerInvokerRegistry));
+        // Build pipeline once
+        var pipeline = ConsumePipeline.Build(
+            middlewares,
+            (ctx, ct) => InvokeHandlerAsync(ctx, ct, handlerInvokerRegistry));
 
-            await pipeline.ExecuteAsync(context, cancellationToken);
-        };
+        return pipeline;
     }
 
     /// <summary>
     /// Invokes the handler for a deserialized message.
     /// </summary>
-    private static async Task InvokeHandlerAsync(
+    private async Task InvokeHandlerAsync(
         ConsumeContext context,
         CancellationToken cancellationToken,
-        IServiceProvider scopedProvider,
         IHandlerInvokerRegistry handlerInvokerRegistry)
     {
         if (context.Message == null || context.MessageType == null)
@@ -142,6 +146,18 @@ public sealed class ConsumerHostedService : IHostedService, IAsyncDisposable
         if (invoker == null)
         {
             return;
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var scopedProvider = scope.ServiceProvider;
+
+        // Populate idempotency context data if persistence is configured
+        var inboxRepository = scopedProvider.GetService<IInboxRepository>();
+        if (inboxRepository != null)
+        {
+            context.Data[IdempotencyMiddleware.InboxRepositoryKey] = inboxRepository;
+            context.Data[IdempotencyMiddleware.LoggerKey] =
+                scopedProvider.GetRequiredService<ILogger<IdempotencyMiddleware>>();
         }
 
         await invoker.InvokeAsync(
