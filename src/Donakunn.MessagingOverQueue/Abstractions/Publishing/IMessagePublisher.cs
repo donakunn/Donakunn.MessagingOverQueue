@@ -60,7 +60,7 @@ public class PublishOptions
     /// <summary>
     /// Custom headers to include with the message.
     /// </summary>
-    public Dictionary<string, object>? Headers { get; set; }
+    public Dictionary<string, string>? Headers { get; set; }
 
     /// <summary>
     /// Whether to wait for publisher confirms.

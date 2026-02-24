@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Donakunn.MessagingOverQueue.DependencyInjection.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -7,11 +8,14 @@ namespace Donakunn.MessagingOverQueue.Consuming.Middleware;
 /// <summary>
 /// Middleware that enforces a maximum processing time for messages.
 /// If processing exceeds the timeout, the operation is cancelled.
+/// Pools CancellationTokenSource instances to reduce GC pressure on the hot path.
 /// </summary>
 public class TimeoutMiddleware : IOrderedConsumeMiddleware
 {
     private readonly TimeoutOptions _options;
     private readonly ILogger<TimeoutMiddleware> _logger;
+    private readonly ConcurrentBag<CancellationTokenSource> _ctsPool = new();
+    private const int MaxPoolSize = 64;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TimeoutMiddleware"/> class.
@@ -30,19 +34,20 @@ public class TimeoutMiddleware : IOrderedConsumeMiddleware
     public int Order => MiddlewareOrder.Timeout;
 
     /// <inheritdoc />
-    public async Task InvokeAsync(
+    public async ValueTask InvokeAsync(
         ConsumeContext context,
-        Func<ConsumeContext, CancellationToken, Task> next,
+        Func<ConsumeContext, CancellationToken, ValueTask> next,
         CancellationToken cancellationToken)
     {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(_options.Timeout);
+        var cts = RentCts();
+        var registration = cancellationToken.Register(static state => ((CancellationTokenSource)state!).Cancel(), cts);
 
         try
         {
-            await next(context, timeoutCts.Token).ConfigureAwait(false);
+            cts.CancelAfter(_options.Timeout);
+            await next(context, cts.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             // Timeout occurred (not external cancellation)
             var timeoutException = new TimeoutException(
@@ -59,6 +64,28 @@ public class TimeoutMiddleware : IOrderedConsumeMiddleware
             context.RequeueOnReject = false; // Don't requeue timed-out messages by default
 
             throw timeoutException;
+        }
+        finally
+        {
+            await registration.DisposeAsync().ConfigureAwait(false);
+            ReturnCts(cts);
+        }
+    }
+
+    private CancellationTokenSource RentCts()
+    {
+        return _ctsPool.TryTake(out var cts) ? cts : new CancellationTokenSource();
+    }
+
+    private void ReturnCts(CancellationTokenSource cts)
+    {
+        if (cts.TryReset() && _ctsPool.Count < MaxPoolSize)
+        {
+            _ctsPool.Add(cts);
+        }
+        else
+        {
+            cts.Dispose();
         }
     }
 }

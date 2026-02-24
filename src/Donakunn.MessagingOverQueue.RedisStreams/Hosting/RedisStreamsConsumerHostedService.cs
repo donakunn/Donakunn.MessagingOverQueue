@@ -2,6 +2,7 @@ using Donakunn.MessagingOverQueue.Configuration.Options;
 using Donakunn.MessagingOverQueue.Consuming.Handlers;
 using Donakunn.MessagingOverQueue.Consuming.Middleware;
 using Donakunn.MessagingOverQueue.Hosting;
+using Donakunn.MessagingOverQueue.Persistence.Repositories;
 using Donakunn.MessagingOverQueue.RedisStreams.Configuration;
 using Donakunn.MessagingOverQueue.RedisStreams.Connection;
 using Donakunn.MessagingOverQueue.Topology.DependencyInjection;
@@ -105,22 +106,28 @@ public sealed class RedisStreamsConsumerHostedService(
     private Func<ConsumeContext, CancellationToken, Task> CreateMessageHandler(
         IHandlerInvokerRegistry handlerInvokerRegistry)
     {
-        return async (context, cancellationToken) =>
+        // Resolve middlewares from a temporary scope to avoid root-provider scope validation errors.
+        // IdempotencyMiddleware is scoped (depends on IInboxRepository) — we exclude it here
+        // and handle its context.Data population in the terminal handler instead.
+        List<IConsumeMiddleware> middlewares;
+        using (var scope = serviceProvider.CreateScope())
         {
-            // Create a scope to resolve middlewares with scoped dependencies
-            using var scope = serviceProvider.CreateScope();
-            var scopedProvider = scope.ServiceProvider;
-            var middlewares = scopedProvider.GetServices<IConsumeMiddleware>();
-            
-            var pipeline = new ConsumePipeline(middlewares, (ctx, ct) => HandleMessageAsync(ctx, ct, scopedProvider, handlerInvokerRegistry));
-            await pipeline.ExecuteAsync(context, cancellationToken);
-        };
+            middlewares = scope.ServiceProvider.GetServices<IConsumeMiddleware>()
+                .Where(m => m is not IdempotencyMiddleware)
+                .ToList();
+        }
+
+        // Build pipeline once — all remaining middlewares are singletons
+        var pipeline = ConsumePipeline.Build(
+            middlewares,
+            (ctx, ct) => HandleMessageAsync(ctx, ct, handlerInvokerRegistry));
+
+        return pipeline;
     }
 
-    private static async Task HandleMessageAsync(
-        ConsumeContext context, 
-        CancellationToken cancellationToken, 
-        IServiceProvider scopedProvider,
+    private async Task HandleMessageAsync(
+        ConsumeContext context,
+        CancellationToken cancellationToken,
         IHandlerInvokerRegistry handlerInvokerRegistry)
     {
         if (context.Message == null || context.MessageType == null)
@@ -132,6 +139,19 @@ public sealed class RedisStreamsConsumerHostedService(
         if (invoker == null)
         {
             return;
+        }
+
+        // Create scope only for the handler (scoped lifetime)
+        using var scope = serviceProvider.CreateScope();
+        var scopedProvider = scope.ServiceProvider;
+
+        // Populate idempotency context data if persistence is configured
+        var inboxRepository = scopedProvider.GetService<IInboxRepository>();
+        if (inboxRepository != null)
+        {
+            context.Data[IdempotencyMiddleware.InboxRepositoryKey] = inboxRepository;
+            context.Data[IdempotencyMiddleware.LoggerKey] =
+                scopedProvider.GetRequiredService<ILogger<IdempotencyMiddleware>>();
         }
 
         await invoker.InvokeAsync(

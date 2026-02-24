@@ -16,7 +16,8 @@ public class ConsumePipeline
     /// <param name="terminalHandler">The terminal handler that processes the message.</param>
     public ConsumePipeline(IEnumerable<IConsumeMiddleware> middlewares, Func<ConsumeContext, CancellationToken, Task> terminalHandler)
     {
-        _pipeline = BuildPipeline(middlewares, terminalHandler);
+        var valuePipeline = BuildPipeline(middlewares, (ctx, ct) => new ValueTask(terminalHandler(ctx, ct)));
+        _pipeline = (ctx, ct) => valuePipeline(ctx, ct).AsTask();
     }
 
     /// <summary>
@@ -28,11 +29,23 @@ public class ConsumePipeline
     }
 
     /// <summary>
-    /// Builds the middleware pipeline, sorting ordered middlewares by their Order property.
+    /// Builds a reusable pipeline delegate from the given middlewares and terminal handler.
+    /// Call once at startup and reuse the returned delegate for all messages.
     /// </summary>
-    private static Func<ConsumeContext, CancellationToken, Task> BuildPipeline(
+    public static Func<ConsumeContext, CancellationToken, Task> Build(
         IEnumerable<IConsumeMiddleware> middlewares,
         Func<ConsumeContext, CancellationToken, Task> terminalHandler)
+    {
+        var valuePipeline = BuildPipeline(middlewares, (ctx, ct) => new ValueTask(terminalHandler(ctx, ct)));
+        return (ctx, ct) => valuePipeline(ctx, ct).AsTask();
+    }
+
+    /// <summary>
+    /// Builds the middleware pipeline, sorting ordered middlewares by their Order property.
+    /// </summary>
+    private static Func<ConsumeContext, CancellationToken, ValueTask> BuildPipeline(
+        IEnumerable<IConsumeMiddleware> middlewares,
+        Func<ConsumeContext, CancellationToken, ValueTask> terminalHandler)
     {
         // Sort middlewares by order - ordered middlewares first (by Order), then unordered (by Default)
         var sortedMiddlewares = middlewares
@@ -45,7 +58,7 @@ public class ConsumePipeline
             .Select(x => x.Middleware)
             .ToList();
 
-        Func<ConsumeContext, CancellationToken, Task> current = terminalHandler;
+        Func<ConsumeContext, CancellationToken, ValueTask> current = terminalHandler;
 
         // Build pipeline in reverse order (last middleware wraps the terminal handler)
         foreach (var middleware in Enumerable.Reverse(sortedMiddlewares))
@@ -58,4 +71,3 @@ public class ConsumePipeline
         return current;
     }
 }
-

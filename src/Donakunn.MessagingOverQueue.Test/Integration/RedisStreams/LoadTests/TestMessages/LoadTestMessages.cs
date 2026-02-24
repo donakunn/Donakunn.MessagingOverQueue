@@ -116,18 +116,24 @@ public record FailingLoadTestEvent : Event
 public class LoadTestEventHandler : IMessageHandler<LoadTestEvent>
 {
     private const string HandlerKey = nameof(LoadTestEventHandler);
-    private const string LatenciesKey = HandlerKey + "_Latencies";
     private const string MetricsCollectorKey = HandlerKey + "_MetricsCollector";
 
     /// <summary>
-    /// Static collection tracking all processed sequences across host restarts.
-    /// This is NOT cleared by Reset() - use ResetAll() to clear it.
+    /// Tracks processed sequences for duplicate detection.
+    /// Bounded: only enabled when <see cref="TrackSequences"/> is true (short-lived tests).
+    /// For sustained load tests, disable tracking to avoid unbounded memory growth.
     /// </summary>
     private static readonly ConcurrentDictionary<long, bool> _processedSequences = new();
 
     /// <summary>
+    /// Controls whether per-message sequence tracking is enabled.
+    /// Disable for sustained load tests to prevent unbounded memory growth.
+    /// </summary>
+    public static bool TrackSequences { get; set; } = true;
+
+    /// <summary>
     /// Gets the total number of unique sequences processed across all hosts.
-    /// This persists across Reset() calls.
+    /// Only accurate when <see cref="TrackSequences"/> is true.
     /// </summary>
     public static int TotalUniqueProcessed => _processedSequences.Count;
 
@@ -140,18 +146,6 @@ public class LoadTestEventHandler : IMessageHandler<LoadTestEvent>
     /// Gets the total number of messages handled.
     /// </summary>
     public static long HandleCount => TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Count;
-
-    /// <summary>
-    /// Gets all recorded latencies by sequence number.
-    /// </summary>
-    public static IReadOnlyDictionary<long, long> Latencies
-    {
-        get
-        {
-            var dict = TestExecutionContextAccessor.GetRequired().GetCustomData<ConcurrentDictionary<long, long>>(LatenciesKey);
-            return dict ?? new ConcurrentDictionary<long, long>();
-        }
-    }
 
     /// <summary>
     /// Sets the metrics collector for recording metrics during tests.
@@ -169,7 +163,6 @@ public class LoadTestEventHandler : IMessageHandler<LoadTestEvent>
     {
         var context = TestExecutionContextAccessor.GetRequired();
         context.GetCounter(HandlerKey).Reset();
-        context.SetCustomData(LatenciesKey, new ConcurrentDictionary<long, long>());
     }
 
     /// <summary>
@@ -180,6 +173,7 @@ public class LoadTestEventHandler : IMessageHandler<LoadTestEvent>
     {
         Reset();
         _processedSequences.Clear();
+        TrackSequences = true;
     }
 
     /// <summary>
@@ -196,11 +190,12 @@ public class LoadTestEventHandler : IMessageHandler<LoadTestEvent>
         var latencyTicks = receivedTicks - message.PublishedAtTicks;
         var latency = TimeSpan.FromTicks(latencyTicks * TimeSpan.TicksPerSecond / Stopwatch.Frequency);
 
-        var latencies = testContext.GetCustomData<ConcurrentDictionary<long, long>>(LatenciesKey);
-        latencies?.TryAdd(message.Sequence, latencyTicks);
-
-        // Track processed sequence in static collection (persists across host restarts)
-        _processedSequences.TryAdd(message.Sequence, true);
+        // Track processed sequence only when enabled (short-lived tests).
+        // Disabled for sustained load tests to prevent unbounded memory growth.
+        if (TrackSequences)
+        {
+            _processedSequences.TryAdd(message.Sequence, true);
+        }
 
         testContext.GetCounter(HandlerKey).Increment();
 

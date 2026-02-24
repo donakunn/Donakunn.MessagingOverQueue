@@ -13,7 +13,7 @@ public interface IPublishMiddleware
     /// <param name="context">The publish context.</param>
     /// <param name="next">The next middleware in the pipeline.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task InvokeAsync(PublishContext context, Func<PublishContext, CancellationToken, Task> next, CancellationToken cancellationToken);
+    ValueTask InvokeAsync(PublishContext context, Func<PublishContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -69,7 +69,7 @@ public class PublishContext
     /// <summary>
     /// Message headers.
     /// </summary>
-    public Dictionary<string, object?> Headers { get; set; } = new();
+    public Dictionary<string, string> Headers { get; set; } = new(8);
 
     /// <summary>
     /// Content type.

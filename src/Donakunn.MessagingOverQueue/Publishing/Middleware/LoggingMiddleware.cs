@@ -8,7 +8,7 @@ namespace Donakunn.MessagingOverQueue.Publishing.Middleware;
 /// </summary>
 public class LoggingMiddleware(ILogger<LoggingMiddleware> logger) : IPublishMiddleware
 {
-    public async Task InvokeAsync(PublishContext context, Func<PublishContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+    public async ValueTask InvokeAsync(PublishContext context, Func<PublishContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
 

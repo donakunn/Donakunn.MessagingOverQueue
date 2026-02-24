@@ -28,7 +28,7 @@ public class DeserializationMiddleware : IOrderedConsumeMiddleware
     /// <inheritdoc />
     public int Order => MiddlewareOrder.Deserialization;
 
-    public async Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
     {
         // Deserialize the message first - wrap only deserialization in try-catch
         try

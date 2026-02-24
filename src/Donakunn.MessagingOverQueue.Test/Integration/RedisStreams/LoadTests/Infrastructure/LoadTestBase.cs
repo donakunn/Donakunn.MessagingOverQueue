@@ -480,7 +480,7 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
 /// </summary>
 internal sealed class LoadTestContextPropagationMiddleware(TestExecutionContext testContext) : IConsumeMiddleware
 {
-    public async Task InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ConsumeContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
     {
         var previousContext = TestExecutionContextAccessor.Current;
         TestExecutionContextAccessor.Current = testContext;

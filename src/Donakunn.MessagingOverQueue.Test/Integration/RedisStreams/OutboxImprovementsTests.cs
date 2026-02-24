@@ -389,7 +389,7 @@ public class OutboxImprovementsTests : IAsyncLifetime
             {
                 Body = System.Text.Encoding.UTF8.GetBytes($"{{\"value\":\"{i}\"}}"),
                 QueueName = $"{StreamPrefix}:batch-test-{i}",
-                Headers = new Dictionary<string, object?>
+                Headers = new Dictionary<string, string>
                 {
                     ["message-id"] = Guid.NewGuid().ToString(),
                     ["message-type"] = "TestMessage"
@@ -418,7 +418,7 @@ public class OutboxImprovementsTests : IAsyncLifetime
             {
                 Body = System.Text.Encoding.UTF8.GetBytes($"{{\"value\":\"{i}\"}}"),
                 QueueName = $"test-queue-{i}",
-                Headers = new Dictionary<string, object?>
+                Headers = new Dictionary<string, string>
                 {
                     ["message-id"] = Guid.NewGuid().ToString()
                 }
@@ -571,7 +571,7 @@ public class OutboxImprovementsTests : IAsyncLifetime
         {
             Body = m.Payload,
             QueueName = m.QueueName,
-            Headers = new Dictionary<string, object?>
+            Headers = new Dictionary<string, string>
             {
                 ["message-id"] = m.Id.ToString(),
                 ["message-type"] = m.MessageType
@@ -623,7 +623,7 @@ public class OutboxImprovementsTests : IAsyncLifetime
         {
             Body = m.Payload,
             QueueName = m.QueueName,
-            Headers = new Dictionary<string, object?>
+            Headers = new Dictionary<string, string>
             {
                 ["message-id"] = m.Id.ToString()
             }

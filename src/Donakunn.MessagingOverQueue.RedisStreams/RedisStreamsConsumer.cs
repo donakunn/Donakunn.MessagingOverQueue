@@ -58,9 +58,10 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
 
     /// <summary>
     /// Tracks active processing tasks for graceful shutdown.
-    /// Using ConcurrentBag for thread-safe add and enumeration during shutdown.
+    /// Tasks remove themselves on completion via ContinueWith to prevent unbounded growth.
     /// </summary>
-    private readonly ConcurrentBag<Task> _activeTasks = new();
+    private readonly ConcurrentDictionary<long, Task> _activeTasks = new();
+    private long _taskIdCounter;
 
     private Task? _processingTask;
     private Task? _claimingTask;
@@ -153,7 +154,7 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
         }
 
         // Wait for active message processing tasks to complete (graceful drain)
-        var activeTasks = _activeTasks.Where(t => !t.IsCompleted).ToArray();
+        var activeTasks = _activeTasks.Values.Where(t => !t.IsCompleted).ToArray();
         if (activeTasks.Length > 0)
         {
             _logger.LogDebug("Waiting for {Count} active processing tasks to complete", activeTasks.Length);
@@ -406,10 +407,13 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
 
             // Start processing without awaiting - the semaphore controls concurrency.
             // Task exceptions are handled in ProcessEntryWithTrackingAsync.
+            var taskId = Interlocked.Increment(ref _taskIdCounter);
             var task = ProcessEntryWithTrackingAsync(db, entry, entryIdStr, handler, cancellationToken, isFromPendingRead);
 
-            // Track task for graceful shutdown
-            _activeTasks.Add(task);
+            // Track task for graceful shutdown; self-remove on completion to prevent unbounded growth.
+            var capturedTasks = _activeTasks;
+            _activeTasks.TryAdd(taskId, task);
+            _ = task.ContinueWith(_ => capturedTasks.TryRemove(taskId, out Task? _), TaskContinuationOptions.ExecuteSynchronously);
         }
 
         // Note: We don't wait for tasks here - continuous flow allows the main loop
@@ -530,11 +534,7 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
 
             var context = BuildConsumeContext(entry, values, messageId, messageType, body, headers, correlationId, deliveryCount);
 
-            // Execute handler with timeout
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(_consumerOptions.ProcessingTimeout);
-
-            await handler(context, cts.Token).ConfigureAwait(false);
+            await handler(context, cancellationToken).ConfigureAwait(false);
 
             // Handle acknowledgment based on context flags
             await HandleAcknowledgmentAsync(db, entry, context, messageId).ConfigureAwait(false);
@@ -557,7 +557,7 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
         string messageId,
         string? messageType,
         byte[]? body,
-        Dictionary<string, object> headers,
+        Dictionary<string, string> headers,
         string? correlationId,
         long deliveryCount)
     {
@@ -692,15 +692,14 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
         return null;
     }
 
-    private static Dictionary<string, object> ParseHeaders(string? headersJson)
+    private static Dictionary<string, string> ParseHeaders(string? headersJson)
     {
         if (string.IsNullOrEmpty(headersJson))
             return [];
 
         try
         {
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(headersJson);
-            return parsed?.ToDictionary(kvp => kvp.Key, kvp => (object)kvp.Value) ?? [];
+            return JsonSerializer.Deserialize(headersJson, Serialization.InternalJsonContext.Default.DictionaryStringString) ?? [];
         }
         catch
         {

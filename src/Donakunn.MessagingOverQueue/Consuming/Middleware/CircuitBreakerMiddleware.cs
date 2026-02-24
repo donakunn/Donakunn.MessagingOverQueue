@@ -30,9 +30,9 @@ public class CircuitBreakerMiddleware : IOrderedConsumeMiddleware
     public int Order => MiddlewareOrder.CircuitBreaker;
 
     /// <inheritdoc />
-    public async Task InvokeAsync(
+    public async ValueTask InvokeAsync(
         ConsumeContext context,
-        Func<ConsumeContext, CancellationToken, Task> next,
+        Func<ConsumeContext, CancellationToken, ValueTask> next,
         CancellationToken cancellationToken)
     {
         // Check if circuit is open before attempting processing
@@ -52,7 +52,7 @@ public class CircuitBreakerMiddleware : IOrderedConsumeMiddleware
         {
             await _circuitBreaker.ExecuteAsync(async ct =>
             {
-                await next(context, ct);
+                await next(context, ct).ConfigureAwait(false);
 
                 // If the handler set an exception, throw it to trigger circuit breaker
                 if (context.Exception != null)

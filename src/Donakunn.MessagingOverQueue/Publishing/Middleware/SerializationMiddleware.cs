@@ -8,7 +8,7 @@ namespace Donakunn.MessagingOverQueue.Publishing.Middleware;
 /// </summary>
 public class SerializationMiddleware(IMessageSerializer serializer, ILogger<SerializationMiddleware> logger) : IPublishMiddleware
 {
-    public async Task InvokeAsync(PublishContext context, Func<PublishContext, CancellationToken, Task> next, CancellationToken cancellationToken)
+    public async ValueTask InvokeAsync(PublishContext context, Func<PublishContext, CancellationToken, ValueTask> next, CancellationToken cancellationToken)
     {
         logger.LogDebug("Serializing message {MessageId} of type {MessageType}",
             context.Message?.Id, context.MessageType?.Name);
@@ -16,9 +16,9 @@ public class SerializationMiddleware(IMessageSerializer serializer, ILogger<Seri
         context.Body = serializer.Serialize(context.Message ?? new object(), context.MessageType ?? typeof(object));
         context.ContentType = serializer.ContentType;
 
-        context.Headers["message-type"] = context.Message?.MessageType;
-        context.Headers["message-id"] = context.Message?.Id.ToString();
-        context.Headers["timestamp"] = context.Message?.Timestamp.ToString("O");
+        context.Headers["message-type"] = context.Message?.MessageType ?? string.Empty;
+        context.Headers["message-id"] = context.Message?.Id.ToString() ?? string.Empty;
+        context.Headers["timestamp"] = context.Message?.Timestamp.ToString("O") ?? string.Empty;
 
         if (context.Message?.CorrelationId != null)
             context.Headers["correlation-id"] = context.Message.CorrelationId;

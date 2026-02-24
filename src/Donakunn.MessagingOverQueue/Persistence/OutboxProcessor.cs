@@ -259,7 +259,7 @@ public sealed class OutboxProcessor : BackgroundService
         {
             try
             {
-                var headers = JsonSerializer.Deserialize<Dictionary<string, object>>(message.Headers);
+                var headers = JsonSerializer.Deserialize(message.Headers, Abstractions.Serialization.InternalJsonContext.Default.DictionaryStringString);
                 if (headers != null)
                 {
                     foreach (var header in headers)
