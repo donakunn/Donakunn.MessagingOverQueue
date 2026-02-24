@@ -318,7 +318,7 @@ public sealed class LoadTestConfiguration
 
             // Latency
             LatencyTestLoadLevels = GetEnvIntArray("LOADTEST_LATENCY_LEVELS", [100, 1000, 10000]),
-            LatencyTestDurationPerLevel = GetEnvTimeSpan("LOADTEST_LATENCY_DURATION_PER_LEVEL", TimeSpan.FromMinutes(2)),
+            LatencyTestDurationPerLevel = GetEnvTimeSpan("LOADTEST_LATENCY_DURATION_PER_LEVEL", TimeSpan.FromMinutes(5)),
 
             // Recovery
             RecoveryTestPendingMessageCount = GetEnvInt("LOADTEST_RECOVERY_PENDING_COUNT", 10000),

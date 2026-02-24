@@ -173,6 +173,7 @@ public class LoadTestEventHandler : IMessageHandler<LoadTestEvent>
     {
         Reset();
         _processedSequences.Clear();
+        TrackSequences = true;
     }
 
     /// <summary>

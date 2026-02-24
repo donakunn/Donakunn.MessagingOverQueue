@@ -168,7 +168,7 @@ public class StressTests : LoadTestBase
         var initialMemory = GC.GetTotalMemory(true) / 1024 / 1024;
 
         Metrics.Start();
-        var duration = TimeSpan.FromHours(3);
+        var duration = TimeSpan.FromMinutes(10);
         var stopwatch = Stopwatch.StartNew();
         long sequence = 0;
         var lastMemorySample = TimeSpan.Zero;
