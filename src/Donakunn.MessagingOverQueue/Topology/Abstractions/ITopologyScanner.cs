@@ -51,11 +51,6 @@ public sealed class MessageTypeInfo
     public bool IsEvent { get; init; }
 
     /// <summary>
-    /// Whether this is a query type.
-    /// </summary>
-    public bool IsQuery { get; init; }
-
-    /// <summary>
     /// Custom attributes applied to the message type.
     /// </summary>
     public IReadOnlyCollection<Attribute> Attributes { get; init; } = Array.Empty<Attribute>();
@@ -121,11 +116,6 @@ public sealed class HandlerTopologyInfo
     /// Whether this is an event type.
     /// </summary>
     public bool IsEvent { get; init; }
-
-    /// <summary>
-    /// Whether this is a query type.
-    /// </summary>
-    public bool IsQuery { get; init; }
 }
 
 /// <summary>

@@ -14,7 +14,6 @@ public static class ResilienceExtensions
     /// <example>
     /// <code>
     /// services.AddMessaging()
-    ///     .UseRabbitMqQueues(...)
     ///     .UseResilience(resilience => resilience
     ///         .WithRetry(opts => opts.MaxRetryAttempts = 5)
     ///         .WithCircuitBreaker(opts => opts.FailureThreshold = 10)

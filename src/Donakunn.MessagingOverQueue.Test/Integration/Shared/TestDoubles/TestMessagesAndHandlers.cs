@@ -58,8 +58,6 @@ public record ConcurrencyTestEvent : Event
 /// <summary>
 /// Event with custom queue configuration.
 /// </summary>
-[Queue("custom-queue", QueueType = QueueType.Classic)]
-[RoutingKey("test.custom")]
 public record CustomQueueEvent : Event
 {
     public string Data { get; set; } = string.Empty;

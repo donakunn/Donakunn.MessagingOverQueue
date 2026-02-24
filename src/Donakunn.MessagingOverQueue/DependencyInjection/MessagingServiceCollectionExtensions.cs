@@ -17,9 +17,6 @@ public static class MessagingServiceCollectionExtensions
     /// <example>
     /// <code>
     /// services.AddMessaging()
-    ///     .UseRabbitMqQueues(queues => queues
-    ///         .WithConnection(opts => opts.UseHost("localhost"))
-    ///         .WithTopology(t => t.ScanAssemblyContaining&lt;OrderHandler&gt;()))
     ///     .UseResilience(resilience => resilience
     ///         .WithRetry(opts => opts.MaxRetryAttempts = 5)
     ///         .WithCircuitBreaker())

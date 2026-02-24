@@ -256,21 +256,3 @@ public static class RedisStreamsServiceCollectionExtensions
         return builder;
     }
 }
-
-/// <summary>
-/// Internal messaging builder implementation.
-/// </summary>
-internal sealed class MessagingBuilder : IMessagingBuilder
-{
-    public MessagingBuilder(IServiceCollection services)
-    {
-        Services = services;
-    }
-
-    public IServiceCollection Services { get; }
-
-    /// <summary>
-    /// Indicates whether a queue provider has been configured.
-    /// </summary>
-    public bool HasQueueProvider { get; internal set; }
-}

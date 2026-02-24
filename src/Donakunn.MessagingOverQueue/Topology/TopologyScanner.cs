@@ -4,6 +4,8 @@ using Donakunn.MessagingOverQueue.Topology.Abstractions;
 using Donakunn.MessagingOverQueue.Topology.Attributes;
 using System.Reflection;
 
+
+
 namespace Donakunn.MessagingOverQueue.Topology;
 
 /// <summary>
@@ -14,7 +16,6 @@ public sealed class TopologyScanner : ITopologyScanner
     private static readonly Type MessageInterface = typeof(IMessage);
     private static readonly Type CommandInterface = typeof(ICommand);
     private static readonly Type EventInterface = typeof(IEvent);
-    private static readonly Type QueryInterface = typeof(IQuery<>);
     private static readonly Type HandlerOpenGenericType = typeof(IMessageHandler<>);
 
     /// <inheritdoc />
@@ -81,7 +82,6 @@ public sealed class TopologyScanner : ITopologyScanner
                     MessageType = type,
                     IsCommand = CommandInterface.IsAssignableFrom(type),
                     IsEvent = EventInterface.IsAssignableFrom(type),
-                    IsQuery = IsQueryType(type),
                     Attributes = attributes.AsReadOnly()
                 });
             }
@@ -200,8 +200,7 @@ public sealed class TopologyScanner : ITopologyScanner
             MessageAttributes = messageAttributes.AsReadOnly(),
             ConsumerQueueConfig = consumerQueueConfig,
             IsCommand = CommandInterface.IsAssignableFrom(messageType),
-            IsEvent = EventInterface.IsAssignableFrom(messageType),
-            IsQuery = IsQueryType(messageType)
+            IsEvent = EventInterface.IsAssignableFrom(messageType)
         };
     }
 
@@ -251,7 +250,6 @@ public sealed class TopologyScanner : ITopologyScanner
                 MessageType = type,
                 IsCommand = CommandInterface.IsAssignableFrom(type),
                 IsEvent = EventInterface.IsAssignableFrom(type),
-                IsQuery = IsQueryType(type),
                 Attributes = attributes.AsReadOnly()
             });
         }
@@ -273,10 +271,4 @@ public sealed class TopologyScanner : ITopologyScanner
                      i.GetGenericTypeDefinition() == HandlerOpenGenericType);
     }
 
-    private static bool IsQueryType(Type type)
-    {
-        return type.GetInterfaces()
-            .Any(i => i.IsGenericType &&
-                     i.GetGenericTypeDefinition() == QueryInterface);
-    }
 }

@@ -1,6 +1,5 @@
 using Donakunn.MessagingOverQueue.Configuration.Options;
 using Microsoft.Extensions.DependencyInjection;
-using OldOutboxBuilder = Donakunn.MessagingOverQueue.Persistence.DependencyInjection.IOutboxBuilder;
 
 namespace Donakunn.MessagingOverQueue.DependencyInjection.Persistence;
 
@@ -37,10 +36,14 @@ public interface IPersistenceBuilder
 
 /// <summary>
 /// Builder interface for configuring the outbox pattern database provider.
-/// Extends the legacy IOutboxBuilder for backward compatibility with existing UseSqlServer extensions.
 /// </summary>
-public interface IOutboxBuilder : OldOutboxBuilder
+public interface IOutboxBuilder
 {
+    /// <summary>
+    /// The service collection.
+    /// </summary>
+    IServiceCollection Services { get; }
+
     /// <summary>
     /// The parent persistence builder for fluent chaining back to persistence configuration.
     /// </summary>
