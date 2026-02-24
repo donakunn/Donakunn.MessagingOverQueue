@@ -6,11 +6,6 @@ namespace Donakunn.MessagingOverQueue.Configuration.Options;
 public class OutboxOptions
 {
     /// <summary>
-    /// Configuration section name.
-    /// </summary>
-    public const string SectionName = "RabbitMq:Outbox";
-
-    /// <summary>
     /// Whether the outbox is enabled.
     /// </summary>
     public bool Enabled { get; set; } = true;

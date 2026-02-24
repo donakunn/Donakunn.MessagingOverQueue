@@ -19,7 +19,6 @@ public static class PersistenceExtensions
     /// <example>
     /// <code>
     /// services.AddMessaging()
-    ///     .UseRabbitMqQueues(...)
     ///     .UsePersistence(persistence => persistence
     ///         .WithOutbox(opts => opts.BatchSize = 50)
     ///             .UseSqlServer(connectionString)

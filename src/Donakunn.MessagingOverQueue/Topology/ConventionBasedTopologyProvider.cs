@@ -1,12 +1,11 @@
 using Donakunn.MessagingOverQueue.Abstractions.Messages;
 using Donakunn.MessagingOverQueue.Topology.Abstractions;
-using Donakunn.MessagingOverQueue.Topology.Attributes;
-using System.Reflection;
+using Donakunn.MessagingOverQueue.Topology.Builders;
 
 namespace Donakunn.MessagingOverQueue.Topology;
 
 /// <summary>
-/// Convention-based topology provider that combines conventions with attribute overrides.
+/// Convention-based topology provider that uses naming conventions to build topology.
 /// </summary>
 /// <remarks>
 /// Creates a new instance with the specified dependencies.
@@ -30,7 +29,7 @@ public sealed class ConventionBasedTopologyProvider(
         if (existing != null)
             return existing;
 
-        // Build topology from conventions and attributes
+        // Build topology from conventions
         var definition = BuildTopologyDefinition(messageType);
 
         // Cache in registry
@@ -47,30 +46,43 @@ public sealed class ConventionBasedTopologyProvider(
 
     private TopologyDefinition BuildTopologyDefinition(Type messageType)
     {
-        var exchangeAttr = messageType.GetCustomAttribute<ExchangeAttribute>();
-        var queueAttr = messageType.GetCustomAttribute<QueueAttribute>();
-        var routingKeyAttr = messageType.GetCustomAttribute<RoutingKeyAttribute>();
-        var deadLetterAttr = messageType.GetCustomAttribute<DeadLetterAttribute>();
+        var exchangeName = _namingConvention.GetExchangeName(messageType);
+        var exchangeType = GetDefaultExchangeType(messageType);
 
-        // Determine exchange configuration
-        var exchange = BuildExchangeDefinition(messageType, exchangeAttr);
+        var exchange = new ExchangeDefinition
+        {
+            Name = exchangeName,
+            Type = exchangeType,
+            Durable = _options.DefaultDurable,
+            AutoDelete = false
+        };
 
-        // Determine queue configuration
-        var queue = BuildQueueDefinition(messageType, queueAttr, deadLetterAttr);
+        var queueName = _namingConvention.GetQueueName(messageType);
 
-        // Determine routing key
-        var routingKey = routingKeyAttr?.Pattern ?? _namingConvention.GetRoutingKey(messageType);
+        var queue = new QueueDefinition
+        {
+            Name = queueName,
+            Durable = _options.DefaultDurable,
+            Exclusive = false,
+            AutoDelete = false
+        };
 
-        // Build binding
+        var routingKey = _namingConvention.GetRoutingKey(messageType);
+
         var binding = new BindingDefinition
         {
             ExchangeName = exchange.Name,
             QueueName = queue.Name,
-            RoutingKey = GetBindingRoutingKey(messageType, routingKey)
+            RoutingKey = routingKey
         };
 
-        // Build dead letter configuration if enabled
-        var deadLetter = BuildDeadLetterDefinition(queue.Name, deadLetterAttr);
+        var deadLetter = _options.EnableDeadLetterByDefault
+            ? new DeadLetterDefinition
+            {
+                ExchangeName = _namingConvention.GetDeadLetterExchangeName(queueName),
+                QueueName = _namingConvention.GetDeadLetterQueueName(queueName)
+            }
+            : null;
 
         return new TopologyDefinition
         {
@@ -83,126 +95,18 @@ public sealed class ConventionBasedTopologyProvider(
         };
     }
 
-    private ExchangeDefinition BuildExchangeDefinition(Type messageType, ExchangeAttribute? attr)
-    {
-        var exchangeName = attr?.Name ?? _namingConvention.GetExchangeName(messageType);
-        var exchangeType = attr?.Type ?? GetDefaultExchangeType(messageType);
-
-        return new ExchangeDefinition
-        {
-            Name = exchangeName,
-            Type = ConvertExchangeType(exchangeType),
-            Durable = attr?.Durable ?? _options.DefaultDurable,
-            AutoDelete = attr?.AutoDelete ?? false
-        };
-    }
-
-    private QueueDefinition BuildQueueDefinition(Type messageType, QueueAttribute? attr, DeadLetterAttribute? dlAttr)
-    {
-        var queueName = attr?.Name ?? _namingConvention.GetQueueName(messageType);
-
-        var arguments = new Dictionary<string, object>();
-
-        // Set queue type if specified
-        if (attr?.QueueType is QueueType queueType && queueType != QueueType.Classic)
-        {
-            arguments["x-queue-type"] = ConvertQueueType(queueType);
-        }
-
-        // Set dead letter exchange if enabled
-        if (dlAttr?.Enabled != false && _options.EnableDeadLetterByDefault)
-        {
-            var dlxName = dlAttr?.ExchangeName ?? _namingConvention.GetDeadLetterExchangeName(queueName);
-            arguments["x-dead-letter-exchange"] = dlxName;
-
-            if (dlAttr?.RoutingKey != null)
-            {
-                arguments["x-dead-letter-routing-key"] = dlAttr.RoutingKey;
-            }
-        }
-
-        return new QueueDefinition
-        {
-            Name = queueName,
-            Durable = attr?.Durable ?? _options.DefaultDurable,
-            Exclusive = attr?.Exclusive ?? false,
-            AutoDelete = attr?.AutoDelete ?? false,
-            MessageTtl = attr?.MessageTtlMs > 0 ? attr?.MessageTtlMs : null,
-            MaxLength = attr?.MaxLength > 0 ? attr?.MaxLength : null,
-            MaxLengthBytes = attr?.MaxLengthBytes > 0 ? attr?.MaxLengthBytes : null,
-            QueueType = attr?.QueueType != QueueType.Classic ? ConvertQueueType((attr?.QueueType) ?? QueueType.Classic) : null,
-            Arguments = arguments.Count > 0 ? arguments : null
-        };
-    }
-
-    private DeadLetterDefinition? BuildDeadLetterDefinition(string sourceQueueName, DeadLetterAttribute? attr)
-    {
-        // Check if dead letter is disabled
-        if (attr?.Enabled == false)
-            return null;
-
-        // Check if dead letter should be enabled by default
-        if (attr == null && !_options.EnableDeadLetterByDefault)
-            return null;
-
-        return new DeadLetterDefinition
-        {
-            ExchangeName = attr?.ExchangeName ?? _namingConvention.GetDeadLetterExchangeName(sourceQueueName),
-            QueueName = attr?.QueueName ?? _namingConvention.GetDeadLetterQueueName(sourceQueueName),
-            RoutingKey = attr?.RoutingKey
-        };
-    }
-
-    private static ExchangeType GetDefaultExchangeType(Type messageType)
+    private static string GetDefaultExchangeType(Type messageType)
     {
         // Events use topic exchange for flexible routing
         if (typeof(IEvent).IsAssignableFrom(messageType))
-            return Attributes.ExchangeType.Topic;
+            return "topic";
 
         // Commands use direct exchange for point-to-point
         if (typeof(ICommand).IsAssignableFrom(messageType))
-            return Attributes.ExchangeType.Direct;
+            return "direct";
 
         // Default to topic
-        return Attributes.ExchangeType.Topic;
-    }
-
-    private static string GetBindingRoutingKey(Type messageType, string routingKey)
-    {
-        // For events, use wildcard pattern for subscription
-        if (typeof(IEvent).IsAssignableFrom(messageType))
-        {
-            // If routing key doesn't contain wildcards, use exact match
-            if (!routingKey.Contains('*') && !routingKey.Contains('#'))
-            {
-                return routingKey;
-            }
-        }
-
-        return routingKey;
-    }
-
-    private static string ConvertExchangeType(ExchangeType type)
-    {
-        return type switch
-        {
-            Attributes.ExchangeType.Direct => "direct",
-            Attributes.ExchangeType.Topic => "topic",
-            Attributes.ExchangeType.Fanout => "fanout",
-            Attributes.ExchangeType.Headers => "headers",
-            _ => "topic"
-        };
-    }
-
-    private static string ConvertQueueType(QueueType type)
-    {
-        return type switch
-        {
-            QueueType.Quorum => "quorum",
-            QueueType.Stream => "stream",
-            QueueType.Lazy => "lazy",
-            _ => "classic"
-        };
+        return "topic";
     }
 }
 

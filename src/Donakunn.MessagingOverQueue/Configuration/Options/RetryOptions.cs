@@ -6,11 +6,6 @@ namespace Donakunn.MessagingOverQueue.Configuration.Options;
 public class RetryOptions
 {
     /// <summary>
-    /// Configuration section name.
-    /// </summary>
-    public const string SectionName = "RabbitMq:Retry";
-
-    /// <summary>
     /// Maximum number of retry attempts.
     /// </summary>
     public int MaxRetryAttempts { get; set; } = 3;

@@ -5,13 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Donakunn.MessagingOverQueue.DependencyInjection;
 
 /// <summary>
-/// Extension methods for registering messaging services.
-/// </summary>
-public static class ServiceCollectionExtensions
-{
-}
-
-/// <summary>
 /// Builder interface for configuring messaging services.
 /// </summary>
 public interface IMessagingBuilder

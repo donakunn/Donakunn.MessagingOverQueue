@@ -72,3 +72,29 @@ public sealed class ConsumerQueueAttribute : Attribute
         Name = name;
     }
 }
+
+/// <summary>
+/// Queue types.
+/// </summary>
+public enum QueueType
+{
+    /// <summary>
+    /// Classic queue - standard queue.
+    /// </summary>
+    Classic,
+
+    /// <summary>
+    /// Quorum queue - highly available, replicated queue.
+    /// </summary>
+    Quorum,
+
+    /// <summary>
+    /// Stream queue - high-throughput, append-only log.
+    /// </summary>
+    Stream,
+
+    /// <summary>
+    /// Lazy queue - stores messages to disk as soon as possible.
+    /// </summary>
+    Lazy
+}
