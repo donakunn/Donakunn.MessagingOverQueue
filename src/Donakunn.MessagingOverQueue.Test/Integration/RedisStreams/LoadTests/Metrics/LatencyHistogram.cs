@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 namespace MessagingOverQueue.Test.Integration.RedisStreams.LoadTests.Metrics;
 
 /// <summary>
@@ -30,48 +28,106 @@ public sealed record LatencyStatistics
 }
 
 /// <summary>
-/// Thread-safe histogram for latency measurements.
-/// Uses a concurrent bag for lock-free collection and computes percentiles on demand.
+/// Thread-safe histogram for latency measurements using reservoir sampling.
+/// Maintains a fixed-size reservoir of samples to bound memory usage while
+/// preserving statistical accuracy for percentile calculations.
 /// </summary>
 public sealed class LatencyHistogram
 {
-    private readonly ConcurrentBag<long> _latenciesMs = new();
+    private const int ReservoirSize = 10_000;
+    private readonly long[] _reservoir = new long[ReservoirSize];
+    private long _totalCount;
+    private long _totalSum;
+    private long _min = long.MaxValue;
+    private long _max = long.MinValue;
+    private readonly Lock _lock = new();
 
     /// <summary>
-    /// Records a latency measurement.
-    /// Thread-safe.
+    /// Records a latency measurement using reservoir sampling (Algorithm R).
+    /// Thread-safe. O(1) memory regardless of total message count.
     /// </summary>
     public void Record(TimeSpan latency)
     {
-        _latenciesMs.Add((long)latency.TotalMilliseconds);
+        var ms = (long)latency.TotalMilliseconds;
+
+        lock (_lock)
+        {
+            var count = _totalCount;
+            _totalCount = count + 1;
+            _totalSum += ms;
+
+            if (ms < _min) _min = ms;
+            if (ms > _max) _max = ms;
+
+            if (count < ReservoirSize)
+            {
+                // Fill the reservoir first
+                _reservoir[count] = ms;
+            }
+            else
+            {
+                // Reservoir sampling: replace a random element with decreasing probability
+                var index = Random.Shared.NextInt64(count + 1);
+                if (index < ReservoirSize)
+                {
+                    _reservoir[index] = ms;
+                }
+            }
+        }
     }
 
     /// <summary>
-    /// Gets the number of recorded samples.
+    /// Gets the total number of recorded samples.
     /// </summary>
-    public int Count => _latenciesMs.Count;
+    public long Count
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _totalCount;
+            }
+        }
+    }
 
     /// <summary>
-    /// Computes statistics from all recorded latencies.
+    /// Computes statistics from the reservoir sample.
     /// </summary>
     public LatencyStatistics GetStatistics()
     {
-        var sorted = _latenciesMs.OrderBy(x => x).ToArray();
-        if (sorted.Length == 0)
+        long[] sample;
+        long totalCount;
+        long totalSum;
+        long min;
+        long max;
+
+        lock (_lock)
         {
-            return LatencyStatistics.Empty;
+            totalCount = _totalCount;
+            if (totalCount == 0)
+                return LatencyStatistics.Empty;
+
+            totalSum = _totalSum;
+            min = _min;
+            max = _max;
+
+            var sampleSize = (int)Math.Min(totalCount, ReservoirSize);
+            sample = new long[sampleSize];
+            Array.Copy(_reservoir, sample, sampleSize);
         }
+
+        Array.Sort(sample);
 
         return new LatencyStatistics
         {
-            Count = sorted.Length,
-            Min = TimeSpan.FromMilliseconds(sorted[0]),
-            Max = TimeSpan.FromMilliseconds(sorted[^1]),
-            Mean = TimeSpan.FromMilliseconds(sorted.Average()),
-            P50 = TimeSpan.FromMilliseconds(GetPercentile(sorted, 50)),
-            P95 = TimeSpan.FromMilliseconds(GetPercentile(sorted, 95)),
-            P99 = TimeSpan.FromMilliseconds(GetPercentile(sorted, 99)),
-            P999 = TimeSpan.FromMilliseconds(GetPercentile(sorted, 99.9))
+            Count = (int)totalCount,
+            Min = TimeSpan.FromMilliseconds(min),
+            Max = TimeSpan.FromMilliseconds(max),
+            Mean = TimeSpan.FromMilliseconds((double)totalSum / totalCount),
+            P50 = TimeSpan.FromMilliseconds(GetPercentile(sample, 50)),
+            P95 = TimeSpan.FromMilliseconds(GetPercentile(sample, 95)),
+            P99 = TimeSpan.FromMilliseconds(GetPercentile(sample, 99)),
+            P999 = TimeSpan.FromMilliseconds(GetPercentile(sample, 99.9))
         };
     }
 
@@ -80,7 +136,14 @@ public sealed class LatencyHistogram
     /// </summary>
     public void Clear()
     {
-        _latenciesMs.Clear();
+        lock (_lock)
+        {
+            _totalCount = 0;
+            _totalSum = 0;
+            _min = long.MaxValue;
+            _max = long.MinValue;
+            Array.Clear(_reservoir);
+        }
     }
 
     private static long GetPercentile(long[] sorted, double percentile)

@@ -149,8 +149,12 @@ public class StressTests : LoadTestBase
     public async Task Memory_Stability_Under_Sustained_Load()
     {
         // Arrange
-        LoadTestEventHandler.Reset();
+        LoadTestEventHandler.ResetAll();
         LoadTestEventHandler.SetMetricsCollector(Metrics);
+
+        // Disable per-message sequence tracking to prevent unbounded memory growth
+        // in test infrastructure (the test measures production code memory, not test infra)
+        LoadTestEventHandler.TrackSequences = false;
 
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 50));
@@ -172,57 +176,66 @@ public class StressTests : LoadTestBase
         Reporter.WriteLine($"Testing memory stability over {duration.TotalMinutes} minutes");
         Reporter.WriteLine($"Initial Memory: {initialMemory}MB");
 
-        while (stopwatch.Elapsed < duration && !TestCancellation.IsCancellationRequested)
+        try
         {
-            // Publish batch with payload
-            var tasks = Enumerable.Range(0, 100)
-                .Select(_ => publisher.PublishAsync(new LoadTestEvent
-                {
-                    Sequence = Interlocked.Increment(ref sequence),
-                    Payload = new string('x', 1000) // 1KB payload
-                }, TestCancellation.Token));
-
-            await Task.WhenAll(tasks);
-
-            for (int i = 0; i < 100; i++)
-                Metrics.RecordPublished();
-
-            // Sample memory every minute
-            if (stopwatch.Elapsed - lastMemorySample > TimeSpan.FromMinutes(1))
+            while (stopwatch.Elapsed < duration && !TestCancellation.IsCancellationRequested)
             {
-                var currentMemory = GC.GetTotalMemory(false) / 1024 / 1024;
-                memorySnapshots.Add((stopwatch.Elapsed, currentMemory));
-                Reporter.WriteLine($"[{stopwatch.Elapsed:mm\\:ss}] Memory: {currentMemory}MB, Messages: {sequence}");
-                lastMemorySample = stopwatch.Elapsed;
+                // Publish batch with payload
+                var tasks = Enumerable.Range(0, 100)
+                    .Select(_ => publisher.PublishAsync(new LoadTestEvent
+                    {
+                        Sequence = Interlocked.Increment(ref sequence),
+                        Payload = new string('x', 1000) // 1KB payload
+                    }, TestCancellation.Token));
+
+                await Task.WhenAll(tasks);
+
+                for (int i = 0; i < 100; i++)
+                    Metrics.RecordPublished();
+
+                // Sample memory every minute
+                if (stopwatch.Elapsed - lastMemorySample > TimeSpan.FromMinutes(1))
+                {
+                    var currentMemory = GC.GetTotalMemory(false) / 1024 / 1024;
+                    memorySnapshots.Add((stopwatch.Elapsed, currentMemory));
+                    Reporter.WriteLine($"[{stopwatch.Elapsed:mm\\:ss}] Memory: {currentMemory}MB, Messages: {sequence}");
+                    lastMemorySample = stopwatch.Elapsed;
+                }
+
+                await Task.Delay(100, TestCancellation.Token);
             }
 
-            await Task.Delay(100, TestCancellation.Token);
+            await WaitForConsumptionAsync(sequence, TimeSpan.FromMinutes(5));
+            Metrics.Stop();
+
+            // Force GC and measure final memory
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            var finalMemory = GC.GetTotalMemory(true) / 1024 / 1024;
+            var memoryGrowth = finalMemory - initialMemory;
+
+            Reporter.WriteLine($"Final Memory: {finalMemory}MB");
+            Reporter.WriteLine($"Memory Growth: {memoryGrowth}MB");
+
+            // Assert
+            var finalMetrics = Metrics.GetSnapshot();
+            Reporter.ReportFinal(finalMetrics, "Memory Stability Test");
+
+            // Memory should not grow unbounded (allow some growth for test infrastructure)
+            Assert.True(
+                memoryGrowth < 500,
+                $"Memory grew by {memoryGrowth}MB, expected < 500MB growth");
+
+            // Use count-based assertion instead of sequence tracking for sustained load
+            Assert.Equal(finalMetrics.TotalPublished, finalMetrics.TotalConsumed);
         }
-
-        await WaitForConsumptionAsync(sequence, TimeSpan.FromMinutes(5));
-        Metrics.Stop();
-
-        // Force GC and measure final memory
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-
-        var finalMemory = GC.GetTotalMemory(true) / 1024 / 1024;
-        var memoryGrowth = finalMemory - initialMemory;
-
-        Reporter.WriteLine($"Final Memory: {finalMemory}MB");
-        Reporter.WriteLine($"Memory Growth: {memoryGrowth}MB");
-
-        // Assert
-        var finalMetrics = Metrics.GetSnapshot();
-        Reporter.ReportFinal(finalMetrics, "Memory Stability Test");
-
-        // Memory should not grow unbounded (allow some growth for test infrastructure)
-        Assert.True(
-            memoryGrowth < 500,
-            $"Memory grew by {memoryGrowth}MB, expected < 500MB growth");
-
-        AssertNoMessageLoss();
+        finally
+        {
+            // Re-enable sequence tracking for other tests
+            LoadTestEventHandler.TrackSequences = true;
+        }
     }
 
     [Fact]
