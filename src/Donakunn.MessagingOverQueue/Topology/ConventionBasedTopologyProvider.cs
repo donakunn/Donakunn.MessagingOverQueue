@@ -47,7 +47,7 @@ public sealed class ConventionBasedTopologyProvider(
     private TopologyDefinition BuildTopologyDefinition(Type messageType)
     {
         var exchangeName = _namingConvention.GetExchangeName(messageType);
-        var exchangeType = GetDefaultExchangeType(messageType);
+        var exchangeType = _namingConvention.GetExchangeType(messageType);
 
         var exchange = new ExchangeDefinition
         {
@@ -95,19 +95,6 @@ public sealed class ConventionBasedTopologyProvider(
         };
     }
 
-    private static string GetDefaultExchangeType(Type messageType)
-    {
-        // Events use topic exchange for flexible routing
-        if (typeof(IEvent).IsAssignableFrom(messageType))
-            return "topic";
-
-        // Commands use direct exchange for point-to-point
-        if (typeof(ICommand).IsAssignableFrom(messageType))
-            return "direct";
-
-        // Default to topic
-        return "topic";
-    }
 }
 
 /// <summary>

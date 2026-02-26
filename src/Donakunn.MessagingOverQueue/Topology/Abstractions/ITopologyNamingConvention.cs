@@ -48,4 +48,10 @@ public interface ITopologyNamingConvention
     /// <param name="messageType">The message type being handled.</param>
     /// <returns>The consumer queue name.</returns>
     string GetConsumerQueueName(Type handlerType, Type messageType) => GetQueueName(messageType);
+
+    /// <summary>
+    /// Gets the exchange type for a message type.
+    /// Returns "topic" for events, "direct" for commands.
+    /// </summary>
+    string GetExchangeType(Type messageType);
 }
