@@ -9,11 +9,6 @@ namespace Donakunn.MessagingOverQueue.Topology.Attributes;
 public sealed class ConsumerQueueAttribute : Attribute
 {
     /// <summary>
-    /// The queue name. If null, convention-based naming will be used.
-    /// </summary>
-    public string? Name { get; init; }
-
-    /// <summary>
     /// Whether the queue is durable. Defaults to true.
     /// </summary>
     public bool Durable { get; init; } = true;
@@ -62,15 +57,6 @@ public sealed class ConsumerQueueAttribute : Attribute
     /// Creates a new consumer queue attribute.
     /// </summary>
     public ConsumerQueueAttribute() { }
-
-    /// <summary>
-    /// Creates a new consumer queue attribute with the specified name.
-    /// </summary>
-    /// <param name="name">The queue name.</param>
-    public ConsumerQueueAttribute(string name)
-    {
-        Name = name;
-    }
 }
 
 /// <summary>

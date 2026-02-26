@@ -1,5 +1,7 @@
 using Donakunn.MessagingOverQueue.Abstractions.Messages;
 using Donakunn.MessagingOverQueue.Topology.Abstractions;
+using Donakunn.MessagingOverQueue.Topology.Attributes;
+using System.Reflection;
 using System.Text.RegularExpressions;
 
 namespace Donakunn.MessagingOverQueue.Topology.Conventions;
@@ -29,22 +31,15 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
     {
         ArgumentNullException.ThrowIfNull(messageType);
 
-        var baseName = GetBaseName(messageType);
+        var name = FormatName(ResolveEventName(messageType));
 
-        // Events use topic exchange with event-specific naming
         if (typeof(IEvent).IsAssignableFrom(messageType))
-        {
-            return FormatName($"{_options.EventExchangePrefix}{baseName}");
-        }
+            return $"events.{name}";
 
-        // Commands use direct exchange with command-specific naming
         if (typeof(ICommand).IsAssignableFrom(messageType))
-        {
-            return FormatName($"{_options.CommandExchangePrefix}{baseName}");
-        }
+            return $"commands.{name}";
 
-        // Default exchange naming
-        return FormatName($"{_options.DefaultExchangePrefix}{baseName}");
+        return name;
     }
 
     /// <inheritdoc />
@@ -52,25 +47,18 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
     {
         ArgumentNullException.ThrowIfNull(messageType);
 
-        var baseName = GetBaseName(messageType);
+        var name = FormatName(ResolveEventName(messageType));
 
         if (typeof(IEvent).IsAssignableFrom(messageType))
         {
-            // Events: include service name for subscriber isolation
-            var serviceName = _options.ServiceName ?? "default";
-            // Format individual parts before concatenation to avoid incorrect hyphen insertion
-            var formattedServiceName = FormatName(serviceName);
-            var formattedBaseName = FormatName(baseName);
-            return $"{formattedServiceName}{_options.QueueSeparator}{formattedBaseName}";
+            var serviceName = FormatName(_options.ServiceName ?? "default");
+            return $"{serviceName}.{name}";
         }
 
         if (typeof(ICommand).IsAssignableFrom(messageType))
-        {
-            // Commands: use message name directly (single consumer)
-            return FormatName($"{_options.CommandQueuePrefix}{baseName}");
-        }
+            return name;
 
-        return FormatName($"{_options.DefaultQueuePrefix}{baseName}");
+        return name;
     }
 
     /// <summary>
@@ -85,14 +73,25 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
         ArgumentNullException.ThrowIfNull(handlerType);
         ArgumentNullException.ThrowIfNull(messageType);
 
-        var messageBaseName = GetBaseName(messageType);
-        var serviceName = _options.ServiceName ?? GetServiceNameFromHandler(handlerType);
+        var eventAttr    = messageType.GetCustomAttribute<EventTopologyAttribute>();
+        var consumerAttr = handlerType.GetCustomAttribute<ConsumerTopologyAttribute>();
 
-        // Format individual parts before concatenation to avoid incorrect hyphen insertion
-        var formattedServiceName = FormatName(serviceName);
-        var formattedMessageName = FormatName(messageBaseName);
+        // Message name segment: consumer.Name ?? event.Name ?? convention
+        var baseName = consumerAttr?.Name
+            ?? eventAttr?.Name
+            ?? GetBaseName(messageType);
 
-        return $"{formattedServiceName}{_options.QueueSeparator}{formattedMessageName}";
+        // Version: consumer.Version ?? event.Version (consumer wins)
+        var version = consumerAttr?.Version ?? eventAttr?.Version;
+
+        var nameWithVersion = version is null ? baseName : $"{baseName}.{version}";
+
+        // Service prefix: consumer.Category ?? global ServiceName ?? namespace extraction
+        var serviceName = consumerAttr?.Category
+            ?? _options.ServiceName
+            ?? GetServiceNameFromHandler(handlerType);
+
+        return $"{FormatName(serviceName)}.{FormatName(nameWithVersion)}";
     }
 
     /// <inheritdoc />
@@ -100,34 +99,45 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
     {
         ArgumentNullException.ThrowIfNull(messageType);
 
-        var baseName = GetBaseName(messageType);
+        var attr = messageType.GetCustomAttribute<EventTopologyAttribute>();
 
-        // Use dot notation for topic exchanges
         if (typeof(IEvent).IsAssignableFrom(messageType))
         {
-            var category = ExtractCategory(messageType);
-            return $"{category}.{ConvertToRoutingKeySegment(baseName)}";
+            var baseName = attr?.Name ?? GetBaseName(messageType);
+            var version = attr?.Version;
+            var nameSegment = ConvertToRoutingKeySegment(version is null ? baseName : $"{baseName}.{version}");
+            var category = attr?.Category ?? ExtractCategory(messageType);
+            return $"{category}.{nameSegment}";
         }
 
-        // Commands use simple routing key
+        var cmdBaseName = attr?.Name ?? GetBaseName(messageType);
+        return ConvertToRoutingKeySegment(cmdBaseName);
+    }
+
+    /// <inheritdoc />
+    public string GetExchangeType(Type messageType)
+    {
+        ArgumentNullException.ThrowIfNull(messageType);
+
         if (typeof(ICommand).IsAssignableFrom(messageType))
-        {
-            return ConvertToRoutingKeySegment(baseName);
-        }
+            return "direct";
 
-        return ConvertToRoutingKeySegment(baseName);
+        return "topic";
     }
 
     /// <inheritdoc />
     public string GetDeadLetterExchangeName(string sourceQueueName)
-    {
-        return FormatName($"{_options.DeadLetterExchangePrefix}{sourceQueueName}");
-    }
+        => $"dlx.{sourceQueueName}";
 
     /// <inheritdoc />
     public string GetDeadLetterQueueName(string sourceQueueName)
+        => $"{sourceQueueName}.dlq";
+
+    private string ResolveEventName(Type messageType)
     {
-        return FormatName($"{sourceQueueName}{_options.QueueSeparator}{_options.DeadLetterQueueSuffix}");
+        var attr = messageType.GetCustomAttribute<EventTopologyAttribute>();
+        var baseName = attr?.Name ?? GetBaseName(messageType);
+        return attr?.Version is null ? baseName : $"{baseName}.{attr.Version}";
     }
 
     private string GetBaseName(Type messageType)
@@ -149,14 +159,12 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
 
     private static string GetServiceNameFromHandler(Type handlerType)
     {
-        // Try to extract service name from namespace
         var ns = handlerType.Namespace;
         if (string.IsNullOrEmpty(ns))
-            return "default";
+            return "Default";
 
         var parts = ns.Split('.');
 
-        // Look for first meaningful part before common suffixes
         for (int i = 0; i < parts.Length; i++)
         {
             var part = parts[i];
@@ -165,21 +173,16 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
                 !part.Equals("Services", StringComparison.OrdinalIgnoreCase) &&
                 !part.Equals("src", StringComparison.OrdinalIgnoreCase))
             {
-                return part.ToLowerInvariant();
+                return part; // original casing — FormatName will kebab-case it
             }
         }
 
-        return "default";
+        return "Default";
     }
 
-    private string FormatName(string name)
+    private static string FormatName(string name)
     {
-        // Convert to kebab-case or configured format
-        var formatted = _options.UseLowerCase
-            ? ToKebabCase(name).ToLowerInvariant()
-            : ToKebabCase(name);
-
-        return formatted;
+        return ToKebabCase(name);
     }
 
     private static string ToKebabCase(string value)
@@ -235,57 +238,14 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
 public sealed class TopologyNamingOptions
 {
     /// <summary>
-    /// Service name used in queue naming for event subscriptions.
+    /// Global service name used as queue prefix for events.
+    /// When set, overrides namespace-based service name extraction.
     /// </summary>
     public string? ServiceName { get; set; }
 
     /// <summary>
-    /// Whether to use lowercase names. Defaults to true.
-    /// </summary>
-    public bool UseLowerCase { get; set; } = true;
-
-    /// <summary>
-    /// Separator for queue name segments. Defaults to ".".
-    /// </summary>
-    public string QueueSeparator { get; set; } = ".";
-
-    /// <summary>
-    /// Prefix for event exchanges. Defaults to "events.".
-    /// </summary>
-    public string EventExchangePrefix { get; set; } = "events.";
-
-    /// <summary>
-    /// Prefix for command exchanges. Defaults to "commands.".
-    /// </summary>
-    public string CommandExchangePrefix { get; set; } = "commands.";
-
-    /// <summary>
-    /// Default exchange prefix. Defaults to "".
-    /// </summary>
-    public string DefaultExchangePrefix { get; set; } = "";
-
-    /// <summary>
-    /// Prefix for command queues. Defaults to "".
-    /// </summary>
-    public string CommandQueuePrefix { get; set; } = "";
-
-    /// <summary>
-    /// Default queue prefix. Defaults to "".
-    /// </summary>
-    public string DefaultQueuePrefix { get; set; } = "";
-
-    /// <summary>
-    /// Prefix for dead letter exchanges. Defaults to "dlx.".
-    /// </summary>
-    public string DeadLetterExchangePrefix { get; set; } = "dlx.";
-
-    /// <summary>
-    /// Suffix for dead letter queues. Defaults to "dlq".
-    /// </summary>
-    public string DeadLetterQueueSuffix { get; set; } = "dlq";
-
-    /// <summary>
-    /// Suffixes to remove from type names. Defaults to Command, Event, Message.
+    /// Type name suffixes stripped before name formatting.
+    /// Defaults to Command, Event, Message, Query.
     /// </summary>
     public string[] SuffixesToRemove { get; set; } = ["Command", "Event", "Message", "Query"];
 }

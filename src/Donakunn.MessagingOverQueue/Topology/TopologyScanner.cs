@@ -211,7 +211,6 @@ public sealed class TopologyScanner : ITopologyScanner
 
         return new ConsumerQueueInfo
         {
-            QueueName = attr.Name,
             Durable = attr.Durable,
             Exclusive = attr.Exclusive,
             AutoDelete = attr.AutoDelete,

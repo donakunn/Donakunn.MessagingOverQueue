@@ -27,7 +27,7 @@ public sealed class HandlerTopologyBuilder(
         ArgumentNullException.ThrowIfNull(handlerInfo);
 
         var topology = BuildTopologyDefinition(handlerInfo);
-        var queueName = DetermineConsumerQueueName(handlerInfo, topology);
+        var queueName = DetermineConsumerQueueName(topology);
 
         return new HandlerRegistration
         {
@@ -83,7 +83,7 @@ public sealed class HandlerTopologyBuilder(
     private ExchangeDefinition BuildExchangeDefinition(Type messageType)
     {
         var exchangeName = _namingConvention.GetExchangeName(messageType);
-        var exchangeType = GetDefaultExchangeType(messageType);
+        var exchangeType = _namingConvention.GetExchangeType(messageType);
 
         return new ExchangeDefinition
         {
@@ -99,28 +99,14 @@ public sealed class HandlerTopologyBuilder(
         Type handlerType,
         ConsumerQueueInfo? consumerConfig)
     {
-        // Priority: ConsumerQueueAttribute > Convention
-        string queueName;
-        if (consumerConfig?.QueueName != null)
-        {
-            queueName = consumerConfig.QueueName;
-        }
-        else
-        {
-            // Use handler-aware naming convention
-            queueName = _namingConvention.GetConsumerQueueName(handlerType, messageType);
-        }
+        var queueName = _namingConvention.GetConsumerQueueName(handlerType, messageType);
 
         var arguments = new Dictionary<string, object>();
 
-        // Set queue type from consumer config if specified
         var queueType = consumerConfig?.QueueType;
         if (queueType != null)
-        {
             arguments["x-queue-type"] = queueType;
-        }
 
-        // Set dead letter exchange if enabled
         if (_options.EnableDeadLetterByDefault)
         {
             var dlxName = _namingConvention.GetDeadLetterExchangeName(queueName);
@@ -159,24 +145,7 @@ public sealed class HandlerTopologyBuilder(
         };
     }
 
-    private string DetermineConsumerQueueName(HandlerTopologyInfo handlerInfo, TopologyDefinition topology)
-    {
-        // If handler has explicit queue name, use it
-        if (handlerInfo.ConsumerQueueConfig?.QueueName != null)
-            return handlerInfo.ConsumerQueueConfig.QueueName;
+    private static string DetermineConsumerQueueName(TopologyDefinition topology)
+        => topology.Queue.Name;
 
-        // Otherwise use the queue from topology
-        return topology.Queue.Name;
-    }
-
-    private static string GetDefaultExchangeType(Type messageType)
-    {
-        if (typeof(IEvent).IsAssignableFrom(messageType))
-            return "topic";
-
-        if (typeof(ICommand).IsAssignableFrom(messageType))
-            return "direct";
-
-        return "topic";
-    }
 }

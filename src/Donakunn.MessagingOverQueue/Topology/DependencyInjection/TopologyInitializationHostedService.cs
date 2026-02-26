@@ -1,6 +1,5 @@
 using Donakunn.MessagingOverQueue.DependencyInjection;
 using Donakunn.MessagingOverQueue.Topology.Abstractions;
-using Donakunn.MessagingOverQueue.Topology.Builders;
 using Donakunn.MessagingOverQueue.Abstractions.Serialization;
 using Donakunn.MessagingOverQueue.Persistence.Providers;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,7 +34,6 @@ internal sealed class TopologyInitializationHostedService : IHostedService
 
         var registry = _serviceProvider.GetRequiredService<ITopologyRegistry>();
         var declarer = _serviceProvider.GetRequiredService<ITopologyDeclarer>();
-        var configuration = _serviceProvider.GetService<TopologyConfiguration>();
         var discoveryResult = _serviceProvider.GetService<HandlerDiscoveryResult>();
 
         // Initialize handler invokers
@@ -51,12 +49,6 @@ internal sealed class TopologyInitializationHostedService : IHostedService
         if (discoveryResult != null)
         {
             RegisterDiscoveredTopologies(registry, discoveryResult);
-        }
-
-        // Register manually configured topologies
-        if (configuration != null)
-        {
-            RegisterManualTopologies(registry, configuration.Builder);
         }
 
         // Declare all registered topologies to message broker
@@ -156,18 +148,4 @@ internal sealed class TopologyInitializationHostedService : IHostedService
         }
     }
 
-    /// <summary>
-    /// Registers manually configured topologies.
-    /// </summary>
-    private void RegisterManualTopologies(ITopologyRegistry registry, TopologyBuilder builder)
-    {
-        foreach (var definition in builder.Definitions)
-        {
-            if (!string.IsNullOrEmpty(definition.Queue.Name))
-            {
-                registry.Register(definition);
-                _logger.LogDebug("Registered manual topology for queue {Queue}", definition.Queue.Name);
-            }
-        }
-    }
 }

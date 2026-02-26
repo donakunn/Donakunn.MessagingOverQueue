@@ -1,277 +1,192 @@
-//using MessagingOverQueue.src.Abstractions.Consuming;
-//using MessagingOverQueue.src.Abstractions.Messages;
-//using MessagingOverQueue.src.Topology;
-//using MessagingOverQueue.src.Topology.Abstractions;
-//using MessagingOverQueue.src.Topology.Attributes;
-//using System.Reflection;
+using Donakunn.MessagingOverQueue.Abstractions.Consuming;
+using Donakunn.MessagingOverQueue.Abstractions.Messages;
+using Donakunn.MessagingOverQueue.Topology;
+using Donakunn.MessagingOverQueue.Topology.Abstractions;
+using Donakunn.MessagingOverQueue.Topology.Attributes;
+using System.Reflection;
+using Xunit;
 
-//namespace MessagingOverQueue.Test.Unit.Topology;
+namespace Donakunn.MessagingOverQueue.Test.Unit.Topology;
 
-///// <summary>
-///// Unit tests for TopologyScanner.
-///// </summary>
-//public class TopologyScannerTests
-//{
-//    private readonly TopologyScanner _scanner = new();
+public class TopologyScannerTests
+{
+    private readonly TopologyScanner _scanner = new();
 
-//    [Fact]
-//    public void ScanForMessageTypes_FindsEventTypes()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(TestEvent).Assembly };
+    [Fact]
+    public void ScanForMessageTypes_FindsEventTypes()
+    {
+        var messageTypes = _scanner.ScanForMessageTypes(typeof(TestEvent).Assembly);
+        Assert.Contains(messageTypes, m => m.MessageType == typeof(TestEvent));
+    }
 
-//        // Act
-//        var messageTypes = _scanner.ScanForMessageTypes(assemblies);
+    [Fact]
+    public void ScanForMessageTypes_FindsCommandTypes()
+    {
+        var messageTypes = _scanner.ScanForMessageTypes(typeof(TestCommand).Assembly);
+        var commandType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(TestCommand));
+        Assert.NotNull(commandType);
+        Assert.True(commandType.IsCommand);
+        Assert.False(commandType.IsEvent);
+    }
 
-//        // Assert
-//        Assert.Contains(messageTypes, m => m.MessageType == typeof(TestEvent));
-//    }
+    [Fact]
+    public void ScanForMessageTypes_CorrectlyIdentifiesEventVsCommand()
+    {
+        var messageTypes = _scanner.ScanForMessageTypes(typeof(TestEvent).Assembly);
+        var eventType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(TestEvent));
+        var commandType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(TestCommand));
+        Assert.NotNull(eventType);
+        Assert.NotNull(commandType);
+        Assert.True(eventType.IsEvent);
+        Assert.False(eventType.IsCommand);
+        Assert.True(commandType.IsCommand);
+        Assert.False(commandType.IsEvent);
+    }
 
-//    [Fact]
-//    public void ScanForMessageTypes_FindsCommandTypes()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(TestCommand).Assembly };
+    [Fact]
+    public void ScanForMessageTypes_RespectsAutoDiscoverAttribute()
+    {
+        var messageTypes = _scanner.ScanForMessageTypes(typeof(NonDiscoverableMessage).Assembly);
+        Assert.DoesNotContain(messageTypes, m => m.MessageType == typeof(NonDiscoverableMessage));
+    }
 
-//        // Act
-//        var messageTypes = _scanner.ScanForMessageTypes(assemblies);
+    [Fact]
+    public void ScanForMessageTypes_NullAssemblies_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => _scanner.ScanForMessageTypes(null!));
+    }
 
-//        // Assert
-//        var commandType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(TestCommand));
-//        Assert.NotNull(commandType);
-//        Assert.True(commandType.IsCommand);
-//        Assert.False(commandType.IsEvent);
-//    }
+    [Fact]
+    public void ScanForMessageTypes_EmptyAssemblies_ReturnsEmpty()
+    {
+        var messageTypes = _scanner.ScanForMessageTypes();
+        Assert.Empty(messageTypes);
+    }
 
-//    [Fact]
-//    public void ScanForMessageTypes_CorrectlyIdentifiesEventVsCommand()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(TestEvent).Assembly };
+    [Fact]
+    public void ScanForHandlers_FindsHandlerTypes()
+    {
+        var handlers = _scanner.ScanForHandlers(typeof(TestEventHandler).Assembly);
+        Assert.Contains(handlers, h => h.HandlerType == typeof(TestEventHandler));
+    }
 
-//        // Act
-//        var messageTypes = _scanner.ScanForMessageTypes(assemblies);
+    [Fact]
+    public void ScanForHandlers_IdentifiesMessageType()
+    {
+        var handlers = _scanner.ScanForHandlers(typeof(TestEventHandler).Assembly);
+        var handler = handlers.FirstOrDefault(h => h.HandlerType == typeof(TestEventHandler));
+        Assert.NotNull(handler);
+        Assert.Equal(typeof(TestEvent), handler.MessageType);
+    }
 
-//        // Assert
-//        var eventType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(TestEvent));
-//        var commandType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(TestCommand));
+    [Fact]
+    public void ScanForHandlers_IgnoresAbstractHandlers()
+    {
+        var handlers = _scanner.ScanForHandlers(typeof(AbstractHandler).Assembly);
+        Assert.DoesNotContain(handlers, h => h.HandlerType == typeof(AbstractHandler));
+    }
 
-//        Assert.NotNull(eventType);
-//        Assert.NotNull(commandType);
-//        Assert.True(eventType.IsEvent);
-//        Assert.False(eventType.IsCommand);
-//        Assert.True(commandType.IsCommand);
-//        Assert.False(commandType.IsEvent);
-//    }
+    [Fact]
+    public void ScanForHandlerTopology_ReturnsCompleteInfo()
+    {
+        var topologyInfos = _scanner.ScanForHandlerTopology(typeof(TestEventHandler).Assembly);
+        var info = topologyInfos.FirstOrDefault(t => t.HandlerType == typeof(TestEventHandler));
+        Assert.NotNull(info);
+        Assert.Equal(typeof(TestEvent), info.MessageType);
+        Assert.True(info.IsEvent);
+        Assert.False(info.IsCommand);
+    }
 
-//    [Fact]
-//    public void ScanForMessageTypes_RespectsAutoDiscoverAttribute()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(NonDiscoverableMessage).Assembly };
+    [Fact]
+    public void ScanForHandlerTopology_IncludesConsumerQueueConfig()
+    {
+        var topologyInfos = _scanner.ScanForHandlerTopology(typeof(HandlerWithConsumerQueue).Assembly);
+        var info = topologyInfos.FirstOrDefault(t => t.HandlerType == typeof(HandlerWithConsumerQueue));
+        Assert.NotNull(info);
+        Assert.NotNull(info.ConsumerQueueConfig);
+        Assert.Equal(50, info.ConsumerQueueConfig.PrefetchCount);
+    }
 
-//        // Act
-//        var messageTypes = _scanner.ScanForMessageTypes(assemblies);
+    [Fact]
+    public void ScanForHandlerTopology_ExcludesMessageWithAutoDiscoverFalse()
+    {
+        var topologyInfos = _scanner.ScanForHandlerTopology(typeof(NonDiscoverableMessageHandler).Assembly);
+        Assert.DoesNotContain(topologyInfos, t => t.MessageType == typeof(NonDiscoverableMessage));
+    }
 
-//        // Assert - Should not contain the non-discoverable message
-//        Assert.DoesNotContain(messageTypes, m => m.MessageType == typeof(NonDiscoverableMessage));
-//    }
+    [Fact]
+    public async Task ScanForHandlers_IsThreadSafe()
+    {
+        const int iterations = 50;
+        var results = new System.Collections.Concurrent.ConcurrentBag<IReadOnlyCollection<HandlerTypeInfo>>();
 
-//    [Fact]
-//    public void ScanForMessageTypes_CollectsAttributes()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(AttributedMessage).Assembly };
+        var tasks = Enumerable.Range(0, iterations)
+            .Select(_ => Task.Run(() =>
+            {
+                var handlers = _scanner.ScanForHandlers(typeof(TestEventHandler).Assembly);
+                results.Add(handlers);
+            }));
 
-//        // Act
-//        var messageTypes = _scanner.ScanForMessageTypes(assemblies);
+        await Task.WhenAll(tasks);
 
-//        // Assert
-//        var attributedType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(AttributedMessage));
-//        Assert.NotNull(attributedType);
-//        Assert.Contains(attributedType.Attributes, a => a is QueueAttribute);
-//        Assert.Contains(attributedType.Attributes, a => a is ExchangeAttribute);
-//    }
+        Assert.Equal(iterations, results.Count);
+        var firstCount = results.First().Count;
+        Assert.All(results, r => Assert.Equal(firstCount, r.Count));
+    }
 
-//    [Fact]
-//    public void ScanForMessageTypes_NullAssemblies_ThrowsArgumentNullException()
-//    {
-//        // Act & Assert
-//        Assert.Throws<ArgumentNullException>(() => _scanner.ScanForMessageTypes(null!));
-//    }
+    #region Test Types
 
-//    [Fact]
-//    public void ScanForMessageTypes_EmptyAssemblies_ReturnsEmpty()
-//    {
-//        // Act
-//        var messageTypes = _scanner.ScanForMessageTypes();
+    public class TestEvent : IEvent
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public DateTime Timestamp { get; } = DateTime.UtcNow;
+        public string? CorrelationId { get; } = null;
+        public string? CausationId { get; } = null;
+        public string MessageType { get; } = nameof(TestEvent);
+    }
 
-//        // Assert
-//        Assert.Empty(messageTypes);
-//    }
+    public class TestCommand : ICommand
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public DateTime Timestamp { get; } = DateTime.UtcNow;
+        public string? CorrelationId { get; } = null;
+        public string? CausationId { get; } = null;
+        public string MessageType { get; } = nameof(TestCommand);
+    }
 
-//    [Fact]
-//    public void ScanForHandlers_FindsHandlerTypes()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(TestEventHandler).Assembly };
+    [Message(AutoDiscover = false)]
+    public class NonDiscoverableMessage : IEvent
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public DateTime Timestamp { get; } = DateTime.UtcNow;
+        public string? CorrelationId { get; } = null;
+        public string? CausationId { get; } = null;
+        public string MessageType { get; } = nameof(NonDiscoverableMessage);
+    }
 
-//        // Act
-//        var handlers = _scanner.ScanForHandlers(assemblies);
+    public class TestEventHandler : IMessageHandler<TestEvent>
+    {
+        public Task HandleAsync(TestEvent message, IMessageContext context, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+    }
 
-//        // Assert
-//        Assert.Contains(handlers, h => h.HandlerType == typeof(TestEventHandler));
-//    }
+    [ConsumerQueue(PrefetchCount = 50)]
+    public class HandlerWithConsumerQueue : IMessageHandler<TestEvent>
+    {
+        public Task HandleAsync(TestEvent message, IMessageContext context, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+    }
 
-//    [Fact]
-//    public void ScanForHandlers_IdentifiesMessageType()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(TestEventHandler).Assembly };
+    public class NonDiscoverableMessageHandler : IMessageHandler<NonDiscoverableMessage>
+    {
+        public Task HandleAsync(NonDiscoverableMessage message, IMessageContext context, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+    }
 
-//        // Act
-//        var handlers = _scanner.ScanForHandlers(assemblies);
+    public abstract class AbstractHandler : IMessageHandler<TestEvent>
+    {
+        public abstract Task HandleAsync(TestEvent message, IMessageContext context, CancellationToken cancellationToken);
+    }
 
-//        // Assert
-//        var handler = handlers.FirstOrDefault(h => h.HandlerType == typeof(TestEventHandler));
-//        Assert.NotNull(handler);
-//        Assert.Equal(typeof(TestEvent), handler.MessageType);
-//    }
-
-//    [Fact]
-//    public void ScanForHandlers_IgnoresAbstractHandlers()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(AbstractHandler).Assembly };
-
-//        // Act
-//        var handlers = _scanner.ScanForHandlers(assemblies);
-
-//        // Assert
-//        Assert.DoesNotContain(handlers, h => h.HandlerType == typeof(AbstractHandler));
-//    }
-
-//    [Fact]
-//    public void ScanForHandlerTopology_ReturnsCompleteInfo()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(TestEventHandler).Assembly };
-
-//        // Act
-//        var topologyInfos = _scanner.ScanForHandlerTopology(assemblies);
-
-//        // Assert
-//        var info = topologyInfos.FirstOrDefault(t => t.HandlerType == typeof(TestEventHandler));
-//        Assert.NotNull(info);
-//        Assert.Equal(typeof(TestEvent), info.MessageType);
-//        Assert.True(info.IsEvent);
-//        Assert.False(info.IsCommand);
-//    }
-
-//    [Fact]
-//    public void ScanForHandlerTopology_IncludesConsumerQueueConfig()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(HandlerWithConsumerQueue).Assembly };
-
-//        // Act
-//        var topologyInfos = _scanner.ScanForHandlerTopology(assemblies);
-
-//        // Assert
-//        var info = topologyInfos.FirstOrDefault(t => t.HandlerType == typeof(HandlerWithConsumerQueue));
-//        Assert.NotNull(info);
-//        Assert.NotNull(info.ConsumerQueueConfig);
-//        Assert.Equal("custom-test-queue", info.ConsumerQueueConfig.QueueName);
-//        Assert.Equal(50, info.ConsumerQueueConfig.PrefetchCount);
-//    }
-
-//    [Fact]
-//    public void ScanForHandlerTopology_ExcludesMessageWithAutoDiscoverFalse()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(NonDiscoverableMessageHandler).Assembly };
-
-//        // Act
-//        var topologyInfos = _scanner.ScanForHandlerTopology(assemblies);
-
-//        // Assert
-//        Assert.DoesNotContain(topologyInfos, t => t.MessageType == typeof(NonDiscoverableMessage));
-//    }
-
-//    [Fact]
-//    public async Task ScanForHandlers_IsThreadSafe()
-//    {
-//        // Arrange
-//        var assemblies = new[] { typeof(TestEventHandler).Assembly };
-//        const int iterations = 50;
-//        var results = new List<IReadOnlyCollection<HandlerTypeInfo>>();
-//        var lockObj = new object();
-
-//        // Act
-//        var tasks = Enumerable.Range(0, iterations)
-//            .Select(_ => Task.Run(() =>
-//            {
-//                var handlers = _scanner.ScanForHandlers(assemblies);
-//                lock (lockObj)
-//                {
-//                    results.Add(handlers);
-//                }
-//            }));
-
-//        await Task.WhenAll(tasks);
-
-//        // Assert - All results should be equivalent
-//        Assert.Equal(iterations, results.Count);
-//        var firstCount = results[0].Count;
-//        Assert.All(results, r => Assert.Equal(firstCount, r.Count));
-//    }
-
-//    #region Test Types
-
-//    public class TestEvent : Event
-//    {
-//        public string Data { get; set; } = string.Empty;
-//    }
-
-//    public class TestCommand : Command
-//    {
-//        public string Action { get; set; } = string.Empty;
-//    }
-
-//    [Message(AutoDiscover = false)]
-//    public class NonDiscoverableMessage : Event
-//    {
-//    }
-
-//    [Queue("test-queue")]
-//    [Exchange("test-exchange")]
-//    public class AttributedMessage : Event
-//    {
-//    }
-
-//    public class TestEventHandler : IMessageHandler<TestEvent>
-//    {
-//        public Task HandleAsync(TestEvent message, IMessageContext context, CancellationToken cancellationToken)
-//            => Task.CompletedTask;
-//    }
-
-//    [ConsumerQueue(Name = "custom-test-queue", PrefetchCount = 50)]
-//    public class HandlerWithConsumerQueue : IMessageHandler<TestEvent>
-//    {
-//        public Task HandleAsync(TestEvent message, IMessageContext context, CancellationToken cancellationToken)
-//            => Task.CompletedTask;
-//    }
-
-//    public class NonDiscoverableMessageHandler : IMessageHandler<NonDiscoverableMessage>
-//    {
-//        public Task HandleAsync(NonDiscoverableMessage message, IMessageContext context, CancellationToken cancellationToken)
-//            => Task.CompletedTask;
-//    }
-
-//    public abstract class AbstractHandler : IMessageHandler<TestEvent>
-//    {
-//        public abstract Task HandleAsync(TestEvent message, IMessageContext context, CancellationToken cancellationToken);
-//    }
-
-//    #endregion
-//}
+    #endregion
+}

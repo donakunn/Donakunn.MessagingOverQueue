@@ -124,11 +124,6 @@ public sealed class HandlerTopologyInfo
 public sealed class ConsumerQueueInfo
 {
     /// <summary>
-    /// The name of the queue.
-    /// </summary>
-    public string? QueueName { get; init; }
-
-    /// <summary>
     /// Whether the queue is durable.
     /// </summary>
     public bool Durable { get; init; } = true;
