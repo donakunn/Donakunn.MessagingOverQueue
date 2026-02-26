@@ -178,18 +178,3 @@ Apache 2.0
 ## Contributing
 
 Contributions are welcome. Visit the [GitHub repository](https://github.com/donakunn/Donakunn.MessagingOverQueue) to report issues, submit pull requests, or request features.
-
----
-
-## Notes: Dead Code & Unused Implementations
-
-The following items exist in the codebase but are not wired up or functional:
-
-- **RabbitMQ provider** — Referenced in XML doc comments (`UseRabbitMqQueues`) but no implementation exists. `ExchangeAttribute`, `QueueAttribute`, `RoutingKeyAttribute`, `DeadLetterAttribute` are RabbitMQ-only leftovers. `RetryOptions.SectionName` and `OutboxOptions.SectionName` still reference `"RabbitMq:"` section names.
-- **`IQuery<TResult>`** — Scanned by `TopologyScanner` and sets `IsQuery = true`, but no query handler interface or request/reply infrastructure exists. The flag is never read.
-- **Core `ConsumerHostedService`** — Never registered. Redis Streams uses its own `RedisStreamsConsumerHostedService`.
-- **`IDeadLetterHandler` / `DeadLetterHandler`** — Interface and implementation exist but are never registered in DI or called by any middleware.
-- **Core `ConnectionHealthCheck` / `HealthCheckExtensions.AddHealthCheck()`** — Bypassed entirely. Redis Streams registers `RedisStreamsHealthCheck` directly.
-- **Legacy `IOutboxBuilder` + `OutboxBuilder`** in `Persistence/DependencyInjection/MessageStoreProviderExtensions.cs` — Superseded by new `IOutboxBuilder` in `DependencyInjection/Persistence/`. The `UseSqlServer()` overloads in the legacy location are shadowed.
-- **`ServiceCollectionExtensions`** class in `DependencyInjection/` — Empty shell with no methods.
-- **Duplicate `MessagingBuilder`** — Both `RedisStreamsServiceCollectionExtensions.cs` and core `ServiceCollectionExtensions.cs` define `internal sealed class MessagingBuilder`. The `HasQueueProvider` flag is not set when using `AddRedisStreamsMessaging()` because the type check in `RedisStreamsQueueBuilder` looks for the core `MessagingBuilder` type.
