@@ -14,6 +14,16 @@ public interface IEventPublisher
     /// <param name="event">The event to publish.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task PublishAsync<T>(T @event, CancellationToken cancellationToken = default) where T : IEvent;
+
+    /// <summary>
+    /// Schedules an event for delivery after the specified delay.
+    /// Requires outbox persistence to be configured.
+    /// </summary>
+    /// <exception cref="NotSupportedException">Thrown when outbox persistence is not configured.</exception>
+    Task PublishAsync<T>(T @event, TimeSpan delay, CancellationToken cancellationToken = default)
+        where T : IEvent
+        => throw new NotSupportedException(
+            "Delayed publishing requires outbox persistence. Call UsePersistence().WithOutbox() during setup.");
 }
 
 /// <summary>
@@ -37,5 +47,15 @@ public interface ICommandSender
     /// <param name="queueName">The target queue name.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task SendAsync<T>(T command, string queueName, CancellationToken cancellationToken = default) where T : ICommand;
+
+    /// <summary>
+    /// Schedules a command for delivery after the specified delay.
+    /// Requires outbox persistence to be configured.
+    /// </summary>
+    /// <exception cref="NotSupportedException">Thrown when outbox persistence is not configured.</exception>
+    Task SendAsync<T>(T command, TimeSpan delay, CancellationToken cancellationToken = default)
+        where T : ICommand
+        => throw new NotSupportedException(
+            "Delayed sending requires outbox persistence. Call UsePersistence().WithOutbox() during setup.");
 }
 
