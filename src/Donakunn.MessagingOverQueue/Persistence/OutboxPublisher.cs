@@ -13,24 +13,16 @@ namespace Donakunn.MessagingOverQueue.Persistence;
 /// Publisher that stores messages in the outbox for reliable delivery.
 /// Use this when you need transactional consistency with your database operations.
 /// </summary>
-public sealed class OutboxPublisher : IMessagePublisher, IEventPublisher, ICommandSender
+public sealed class OutboxPublisher(
+    IOutboxRepository repository,
+    IMessageSerializer serializer,
+    IMessageRoutingResolver routingResolver,
+    ILogger<OutboxPublisher> logger) : IMessagePublisher, IEventPublisher, ICommandSender
 {
-    private readonly IOutboxRepository _repository;
-    private readonly IMessageSerializer _serializer;
-    private readonly IMessageRoutingResolver _routingResolver;
-    private readonly ILogger<OutboxPublisher> _logger;
-
-    public OutboxPublisher(
-        IOutboxRepository repository,
-        IMessageSerializer serializer,
-        IMessageRoutingResolver routingResolver,
-        ILogger<OutboxPublisher> logger)
-    {
-        _repository = repository;
-        _serializer = serializer;
-        _routingResolver = routingResolver;
-        _logger = logger;
-    }
+    private readonly IOutboxRepository _repository = repository;
+    private readonly IMessageSerializer _serializer = serializer;
+    private readonly IMessageRoutingResolver _routingResolver = routingResolver;
+    private readonly ILogger<OutboxPublisher> _logger = logger;
 
     public async Task PublishAsync<T>(T message, string? exchangeName = null, string? routingKey = null, CancellationToken cancellationToken = default) where T : IMessage
     {
@@ -59,7 +51,11 @@ public sealed class OutboxPublisher : IMessagePublisher, IEventPublisher, IComma
             options.Headers != null ? JsonSerializer.Serialize(options.Headers, Abstractions.Serialization.InternalJsonContext.Default.DictionaryStringString) : null,
             message.CorrelationId);
 
-        await _repository.AddAsync(entry, cancellationToken);
+        if (!await _repository.TryAddAsync(entry, cancellationToken))
+        {
+            _logger.LogDebug("Skipped duplicate message {MessageId} already present in outbox", message.Id);
+            return;
+        }
 
         _logger.LogDebug("Added message {MessageId} to outbox for exchange '{Exchange}' with routing key '{RoutingKey}' and queue '{QueueName}'",
             message.Id, exchangeName, routingKey, queueName);
@@ -117,7 +113,11 @@ public sealed class OutboxPublisher : IMessagePublisher, IEventPublisher, IComma
             correlationId: message.CorrelationId,
             scheduledAt: scheduledAt);
 
-        await _repository.AddAsync(entry, cancellationToken);
+        if (!await _repository.TryAddAsync(entry, cancellationToken))
+        {
+            _logger.LogDebug("Skipped duplicate message {MessageId} already present in outbox", message.Id);
+            return;
+        }
 
         _logger.LogDebug(
             "Scheduled message {MessageId} for delivery at {ScheduledAt} (delay: {Delay})",

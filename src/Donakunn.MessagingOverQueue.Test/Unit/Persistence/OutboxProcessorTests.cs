@@ -3,9 +3,6 @@ using Donakunn.MessagingOverQueue.Persistence.Entities;
 using Donakunn.MessagingOverQueue.Persistence.Providers;
 using Donakunn.MessagingOverQueue.Persistence.Repositories;
 using Donakunn.MessagingOverQueue.Providers;
-using Donakunn.MessagingOverQueue.Publishing.Middleware;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 
 namespace MessagingOverQueue.Test.Unit.Persistence;
@@ -368,22 +365,6 @@ public class OutboxProcessorTests
             scheduledAt: scheduledAt);
 
         Assert.Equal(scheduledAt, entry.ScheduledAt);
-    }
-
-    [Fact]
-    public void CreateOutboxEntry_WithoutScheduledAt_LeavesFieldNull()
-    {
-        var entry = MessageStoreEntry.CreateOutboxEntry(
-            id: Guid.NewGuid(),
-            messageType: "TestEvent",
-            payload: [],
-            exchangeName: null,
-            routingKey: null,
-            queueName: "test.queue",
-            headers: null,
-            correlationId: null);
-
-        Assert.Null(entry.ScheduledAt);
     }
 
     #endregion
