@@ -184,8 +184,7 @@ public static class TopologyServiceCollectionExtensions
                 {
                     Options = consumerOptions,
                     HandlerType = handlerInfo.HandlerType,
-                    ExchangeName = registration.TopologyDefinition.Exchange.Name,
-                    RoutingKey = registration.TopologyDefinition.RoutingKey
+                    ConsumerGroupName = registration.TopologyDefinition.ConsumerGroupName
                 });
             }
 

@@ -35,7 +35,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         await Task.Delay(1000);
 
         // Assert - Message should be acknowledged (removed from pending)
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 
@@ -62,7 +62,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         await Task.Delay(2000);
 
         // Assert - Message should remain in pending list
-        var streamKey = $"{StreamPrefix}:test-service.failing";
+        var streamKey = $"{StreamPrefix}:testdoubles.failing";
         var consumerGroup = "test-service.failing";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 
@@ -88,7 +88,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         await Task.Delay(1000);
 
         // Assert - All messages acknowledged
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 
@@ -143,7 +143,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         await Task.Delay(1000);
 
         // Assert
-        var streamKey = $"{StreamPrefix}:test-service.slow-processing";
+        var streamKey = $"{StreamPrefix}:testdoubles.slow-processing";
         var consumerGroup = "test-service.slow-processing";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 
@@ -172,7 +172,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         await Task.Delay(2000);
 
         // Assert
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 
@@ -203,7 +203,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         await Task.Delay(3000);
 
         // Assert - Successful messages acknowledged, failed ones pending
-        var streamKey = $"{StreamPrefix}:test-service.mixed-success";
+        var streamKey = $"{StreamPrefix}:redisstreams.mixed-success";
         var consumerGroup = "test-service.mixed-success";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 
@@ -229,7 +229,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         await Task.Delay(1000);
 
         // Assert - Check via Redis stream info
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
         
         var db = GetRedisDatabase();
@@ -244,7 +244,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
     public async Task Consumer_Shutdown_Leaves_Messages_In_Pending()
     {
         // Arrange
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
 
         // Act - Start consumer and publish, but stop before processing completes
@@ -298,7 +298,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         await Task.Delay(2000);
 
         // Assert - All messages acknowledged (distributed across consumers)
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 

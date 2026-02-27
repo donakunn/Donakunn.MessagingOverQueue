@@ -90,9 +90,8 @@ public sealed class RedisStreamsConsumerHostedService(
         var redisOptions = serviceProvider.GetRequiredService<IOptions<RedisStreamsOptions>>();
         var consumerLogger = serviceProvider.GetRequiredService<ILogger<RedisStreamsConsumer>>();
 
-        // Build stream key from queue name (which follows topology conventions)
-        var streamKey = BuildStreamKeyFromQueueName(registration.Options.QueueName, redisOptions.Value);
-        var consumerGroup = registration.Options.QueueName; // Use queue name as consumer group
+        var streamKey     = BuildStreamKeyFromQueueName(registration.Options.QueueName, redisOptions.Value);
+        var consumerGroup = registration.ConsumerGroupName ?? registration.Options.QueueName;
 
         return new RedisStreamsConsumer(
             connectionPool,

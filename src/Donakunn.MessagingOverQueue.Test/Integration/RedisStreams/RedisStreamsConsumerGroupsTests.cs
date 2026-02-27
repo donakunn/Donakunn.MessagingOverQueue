@@ -30,7 +30,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
         await Task.Delay(500);
 
         // Assert
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
 
         var groupExists = await ConsumerGroupExistsAsync(streamKey, consumerGroup);
@@ -62,7 +62,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
         Assert.Equal(messageCount, SimpleTestEventHandler.HandleCount);
 
         // Verify load balancing occurred via Redis consumer info
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
         var consumers = await GetConsumersAsync(streamKey, consumerGroup);
 
@@ -73,11 +73,13 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
     }
 
     [Fact]
-    public async Task Separate_Services_Have_Isolated_Streams()
+    public async Task Separate_Services_Share_Stream_With_Isolated_Consumer_Groups()
     {
-        // Arrange - Create two separate services with isolated streams
-        // Each service has its own stream and consumer group
+        // Under the Redis-Streams-native model, stream key is derived from the event type,
+        // not the service name. Two services subscribing to the same event type share the
+        // same stream but each has its own consumer group for independent processing.
         SimpleTestEventHandler.Reset();
+        const int messageCount = 5;
 
         // Service 1
         using var host1 = await BuildHost(services =>
@@ -111,35 +113,28 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
             .AddRedisStreamsConsumerHostedService();
         });
 
-        var publisher1 = host1.Services.GetRequiredService<IEventPublisher>();
-        var publisher2 = host2.Services.GetRequiredService<IEventPublisher>();
-        const int messageCount = 5;
+        var publisher = host1.Services.GetRequiredService<IEventPublisher>();
 
-        // Act - Publish messages from each service to their respective streams
+        // Act - Both services publish to and consume from the SAME shared stream
         for (int i = 0; i < messageCount; i++)
         {
-            await publisher1.PublishAsync(new SimpleTestEvent { Value = $"Service1-{i}" });
-            await publisher2.PublishAsync(new SimpleTestEvent { Value = $"Service2-{i}" });
+            await publisher.PublishAsync(new SimpleTestEvent { Value = $"Message-{i}" });
         }
 
-        // Wait for all messages to be processed (messageCount * 2 total)
+        // Both consumer groups independently process all messageCount messages
         await SimpleTestEventHandler.WaitForCountAsync(messageCount * 2, DefaultTimeout);
 
-        // Assert - Each service has its own stream with its messages
-        var stream1Key = $"{StreamPrefix}:service-1.simple-test";
-        var stream2Key = $"{StreamPrefix}:service-2.simple-test";
+        // Assert - Single shared stream contains all messages
+        var sharedStream = $"{StreamPrefix}:testdoubles.simple-test";
+        var streamLength = await GetStreamLengthAsync(sharedStream);
+        Assert.Equal(messageCount, streamLength);
 
-        var stream1Length = await GetStreamLengthAsync(stream1Key);
-        var stream2Length = await GetStreamLengthAsync(stream2Key);
+        // Both consumer groups exist on the same stream
+        Assert.True(await ConsumerGroupExistsAsync(sharedStream, "service-1.simple-test"));
+        Assert.True(await ConsumerGroupExistsAsync(sharedStream, "service-2.simple-test"));
 
-        Assert.Equal(messageCount, stream1Length);
-        Assert.Equal(messageCount, stream2Length);
-
-        // Verify messages were processed from both streams
-        var handledMessages = SimpleTestEventHandler.HandledMessages.ToList();
-        Assert.Equal(messageCount * 2, handledMessages.Count);
-        Assert.Equal(messageCount, handledMessages.Count(m => m.Value.StartsWith("Service1-")));
-        Assert.Equal(messageCount, handledMessages.Count(m => m.Value.StartsWith("Service2-")));
+        // Both groups processed the same messageCount messages independently
+        Assert.Equal(messageCount * 2, SimpleTestEventHandler.HandleCount);
     }
 
     [Fact]
@@ -179,7 +174,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
             DefaultTimeout);
 
         // Assert
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
         var consumers = await GetConsumersAsync(streamKey, consumerGroup);
 
@@ -222,7 +217,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
         
         // Slow group should still be processing (not all done yet)
         // We'll give it some time but verify independent state
-        var slowStreamKey = $"{StreamPrefix}:test-service.slow-processing";
+        var slowStreamKey = $"{StreamPrefix}:testdoubles.slow-processing";
         var slowGroup = "test-service.slow-processing";
         var slowPending = await GetPendingMessagesCountAsync(slowStreamKey, slowGroup);
         
@@ -273,7 +268,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
         Assert.Equal(messagesAfterRestart, SimpleTestEventHandler.HandleCount);
 
         // Verify consumer group still exists
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
         Assert.True(await ConsumerGroupExistsAsync(streamKey, consumerGroup));
     }

@@ -44,9 +44,10 @@ public sealed class OutboxPublisher : IMessagePublisher, IEventPublisher, IComma
     public async Task PublishAsync<T>(T message, PublishOptions options, CancellationToken cancellationToken = default) where T : IMessage
     {
         // Use routing resolver for defaults if not explicitly specified
-        var exchangeName = options.ExchangeName ?? _routingResolver.GetExchangeName<T>();
-        var routingKey = options.RoutingKey ?? _routingResolver.GetRoutingKey<T>();
-        var queueName = _routingResolver.GetQueueName<T>();
+        var routing = _routingResolver.ResolveRouting<T>();
+        var exchangeName = options.ExchangeName ?? routing.ExchangeName;
+        var routingKey = options.RoutingKey ?? routing.RoutingKey;
+        var queueName = routing.StreamKey;
 
         var entry = MessageStoreEntry.CreateOutboxEntry(
             message.Id,
@@ -66,15 +67,14 @@ public sealed class OutboxPublisher : IMessagePublisher, IEventPublisher, IComma
 
     public Task PublishAsync<T>(T @event, CancellationToken cancellationToken = default) where T : IEvent
     {
-        var exchangeName = _routingResolver.GetExchangeName<T>();
-        var routingKey = _routingResolver.GetRoutingKey<T>();
-        return PublishAsync(@event, exchangeName, routingKey, cancellationToken);
+        var routing = _routingResolver.ResolveRouting<T>();
+        return PublishAsync(@event, routing.ExchangeName, routing.RoutingKey, cancellationToken);
     }
 
     public Task SendAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand
     {
-        var queueName = _routingResolver.GetQueueName<T>();
-        return SendAsync(command, queueName, cancellationToken);
+        var routing = _routingResolver.ResolveRouting<T>();
+        return SendAsync(command, routing.StreamKey, cancellationToken);
     }
 
     public Task SendAsync<T>(T command, string queueName, CancellationToken cancellationToken = default) where T : ICommand
