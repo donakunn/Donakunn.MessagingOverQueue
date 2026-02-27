@@ -19,19 +19,25 @@ public interface IHandlerInvoker
     Type MessageType { get; }
 
     /// <summary>
-    /// Invokes all registered handlers for the message.
+    /// Invokes registered handlers for the message.
     /// </summary>
     /// <param name="serviceProvider">The scoped service provider.</param>
     /// <param name="message">The message to handle.</param>
     /// <param name="context">The message context.</param>
     /// <param name="contextData">Additional context data from the consume pipeline.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="handlerTypeFilter">
+    /// When non-null, only handlers whose concrete type is in this set are invoked.
+    /// Use this to dispatch to exactly the handlers bound to a specific versioned stream.
+    /// When null, all handlers registered for the message type are invoked (fan-out).
+    /// </param>
     Task InvokeAsync(
         IServiceProvider serviceProvider,
         IMessage message,
         IMessageContext context,
         IReadOnlyDictionary<string, object>? contextData,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        IReadOnlySet<Type>? handlerTypeFilter = null);
 }
 
 /// <summary>
@@ -50,9 +56,13 @@ internal sealed class HandlerInvoker<TMessage> : IHandlerInvoker
         IMessage message,
         IMessageContext context,
         IReadOnlyDictionary<string, object>? contextData,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<Type>? handlerTypeFilter = null)
     {
-        var handlers = serviceProvider.GetServices<IMessageHandler<TMessage>>();
+        var allHandlers = serviceProvider.GetServices<IMessageHandler<TMessage>>();
+        var handlers = handlerTypeFilter is null
+            ? allHandlers
+            : allHandlers.Where(h => handlerTypeFilter.Contains(h.GetType()));
         var idempotencyContext = IdempotencyContext.TryCreate(contextData);
 
         foreach (var handler in handlers)
