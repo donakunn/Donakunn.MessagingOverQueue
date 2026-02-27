@@ -60,11 +60,11 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
             INSERT INTO {0} (
                 Id, Direction, MessageType, Payload, ExchangeName, RoutingKey, QueueName, Headers,
                 HandlerType, CreatedAt, ProcessedAt, Status, RetryCount, LastError,
-                LockToken, LockExpiresAt, CorrelationId
+                LockToken, LockExpiresAt, CorrelationId, ScheduledAt
             ) VALUES (
                 @Id, @Direction, @MessageType, @Payload, @ExchangeName, @RoutingKey, @QueueName, @Headers,
                 @HandlerType, @CreatedAt, @ProcessedAt, @Status, @RetryCount, @LastError,
-                @LockToken, @LockExpiresAt, @CorrelationId
+                @LockToken, @LockExpiresAt, @CorrelationId, @ScheduledAt
             )
             """;
 
@@ -86,11 +86,11 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
             INSERT INTO {0} (
                 Id, Direction, MessageType, Payload, ExchangeName, RoutingKey, QueueName, Headers,
                 HandlerType, CreatedAt, ProcessedAt, Status, RetryCount, LastError,
-                LockToken, LockExpiresAt, CorrelationId
+                LockToken, LockExpiresAt, CorrelationId, ScheduledAt
             ) VALUES (
                 @Id, @Direction, @MessageType, @Payload, @ExchangeName, @RoutingKey, @QueueName, @Headers,
                 @HandlerType, @CreatedAt, @ProcessedAt, @Status, @RetryCount, @LastError,
-                @LockToken, @LockExpiresAt, @CorrelationId
+                @LockToken, @LockExpiresAt, @CorrelationId, @ScheduledAt
             )
             """;
 
@@ -117,7 +117,7 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
         const string sql = """
             SELECT Id, Direction, MessageType, Payload, ExchangeName, RoutingKey, QueueName, Headers,
                    HandlerType, CreatedAt, ProcessedAt, Status, RetryCount, LastError,
-                   LockToken, LockExpiresAt, CorrelationId
+                   LockToken, LockExpiresAt, CorrelationId, ScheduledAt
             FROM {0}
             WHERE Id = @Id AND Direction = @Direction
             """;
@@ -174,9 +174,10 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
                    inserted.ExchangeName, inserted.RoutingKey, inserted.QueueName, inserted.Headers,
                    inserted.HandlerType, inserted.CreatedAt, inserted.ProcessedAt,
                    inserted.Status, inserted.RetryCount, inserted.LastError,
-                   inserted.LockToken, inserted.LockExpiresAt, inserted.CorrelationId
+                   inserted.LockToken, inserted.LockExpiresAt, inserted.CorrelationId, inserted.ScheduledAt
             WHERE Direction = @OutboxDirection
               AND (Status = @PendingStatus OR (Status = @ProcessingStatus AND LockExpiresAt < @Now))
+              AND (ScheduledAt IS NULL OR ScheduledAt <= @Now)
             """;
 
         await using var connection = await CreateConnectionAsync(cancellationToken);
@@ -233,9 +234,10 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
                    inserted.ExchangeName, inserted.RoutingKey, inserted.QueueName, inserted.Headers,
                    inserted.HandlerType, inserted.CreatedAt, inserted.ProcessedAt,
                    inserted.Status, inserted.RetryCount, inserted.LastError,
-                   inserted.LockToken, inserted.LockExpiresAt, inserted.CorrelationId
+                   inserted.LockToken, inserted.LockExpiresAt, inserted.CorrelationId, inserted.ScheduledAt
             WHERE Direction = @OutboxDirection
               AND (Status = @PendingStatus OR (Status = @ProcessingStatus AND LockExpiresAt < @Now))
+              AND (ScheduledAt IS NULL OR ScheduledAt <= @Now)
               AND ABS(CHECKSUM(ISNULL(QueueName, ''))) % @PartitionCount IN ({partitionParams})
             """;
 
@@ -531,6 +533,12 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
         tableCommand.CommandTimeout = _options.CommandTimeoutSeconds;
         await tableCommand.ExecuteNonQueryAsync(cancellationToken);
 
+        // Add ScheduledAt column to existing tables (idempotent)
+        var migrationScript = GetAddScheduledAtColumnScript();
+        await using var migrationCommand = new SqlCommand(migrationScript, connection);
+        migrationCommand.CommandTimeout = _options.CommandTimeoutSeconds;
+        await migrationCommand.ExecuteNonQueryAsync(cancellationToken);
+
         _logger.LogInformation("Ensured message store schema exists: {TableName}", _tableName);
     }
 
@@ -572,6 +580,7 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
         command.Parameters.AddWithValue("@LockToken", (object?)entry.LockToken ?? DBNull.Value);
         command.Parameters.AddWithValue("@LockExpiresAt", (object?)entry.LockExpiresAt ?? DBNull.Value);
         command.Parameters.AddWithValue("@CorrelationId", (object?)entry.CorrelationId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@ScheduledAt", (object?)entry.ScheduledAt ?? DBNull.Value);
     }
 
     private static MessageStoreEntry MapEntry(SqlDataReader reader)
@@ -594,8 +603,31 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
             LastError = reader.IsDBNull(13) ? null : reader.GetString(13),
             LockToken = reader.IsDBNull(14) ? null : reader.GetString(14),
             LockExpiresAt = reader.IsDBNull(15) ? null : reader.GetDateTime(15),
-            CorrelationId = reader.IsDBNull(16) ? null : reader.GetString(16)
+            CorrelationId = reader.IsDBNull(16) ? null : reader.GetString(16),
+            ScheduledAt = reader.IsDBNull(17) ? null : reader.GetDateTime(17)
         };
+    }
+
+    private string GetAddScheduledAtColumnScript()
+    {
+        var fullTableName = string.IsNullOrEmpty(_options.Schema)
+            ? _options.TableName
+            : $"{_options.Schema}].[{_options.TableName}";
+
+        var objectId = string.IsNullOrEmpty(_options.Schema)
+            ? $"N'{_options.TableName}'"
+            : $"N'[{_options.Schema}].[{_options.TableName}]'";
+
+        return $"""
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID({objectId})
+                  AND name = 'ScheduledAt'
+            )
+            BEGIN
+                ALTER TABLE [{fullTableName}] ADD [ScheduledAt] DATETIME2 NULL;
+            END
+            """;
     }
 
     private string GetCreateSchemaScript()
@@ -636,6 +668,7 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
                     [LockToken] NVARCHAR(100) NULL,
                     [LockExpiresAt] DATETIME2 NULL,
                     [CorrelationId] NVARCHAR(100) NULL,
+                    [ScheduledAt]   DATETIME2     NULL,
 
                     CONSTRAINT [PK_{_options.TableName}] PRIMARY KEY CLUSTERED ([Id], [Direction], [HandlerType])
                         WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
@@ -657,9 +690,14 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
                 WHERE [CorrelationId] IS NOT NULL;
 
                 -- Index for cleanup operations
-                CREATE NONCLUSTERED INDEX [IX_{_options.TableName}_Cleanup] 
+                CREATE NONCLUSTERED INDEX [IX_{_options.TableName}_Cleanup]
                 ON [{fullTableName}] ([Direction], [Status], [ProcessedAt])
                 WHERE [ProcessedAt] IS NOT NULL;
+
+                -- Index for scheduled message queries
+                CREATE NONCLUSTERED INDEX [IX_{_options.TableName}_ScheduledAt]
+                ON [{fullTableName}] ([Direction], [Status], [ScheduledAt])
+                WHERE [ScheduledAt] IS NOT NULL;
             END
             """;
     }

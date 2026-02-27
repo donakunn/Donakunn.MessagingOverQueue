@@ -66,7 +66,8 @@ public sealed class InMemoryMessageStoreProvider : IMessageStoreProvider
             var candidates = _entries.Values
                 .Where(e => e.Direction == MessageDirection.Outbox &&
                            (e.Status == MessageStatus.Pending ||
-                            (e.Status == MessageStatus.Processing && e.LockExpiresAt < now)));
+                            (e.Status == MessageStatus.Processing && e.LockExpiresAt < now)) &&
+                           (e.ScheduledAt == null || e.ScheduledAt <= now));
 
             // Apply partition filter if specified
             if (assignedPartitions != null && assignedPartitions.Length > 0 && partitionCount > 0)
@@ -245,7 +246,8 @@ public sealed class InMemoryMessageStoreProvider : IMessageStoreProvider
             LastError = entry.LastError,
             LockToken = entry.LockToken,
             LockExpiresAt = entry.LockExpiresAt,
-            CorrelationId = entry.CorrelationId
+            CorrelationId = entry.CorrelationId,
+            ScheduledAt = entry.ScheduledAt
         };
     }
 
