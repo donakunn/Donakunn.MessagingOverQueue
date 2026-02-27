@@ -1,6 +1,8 @@
 using Donakunn.MessagingOverQueue.Abstractions.Consuming;
+using Donakunn.MessagingOverQueue.Abstractions.Messages;
 using Donakunn.MessagingOverQueue.Abstractions.Publishing;
 using Donakunn.MessagingOverQueue.RedisStreams.DependencyInjection;
+using Donakunn.MessagingOverQueue.Topology.Attributes;
 using Donakunn.MessagingOverQueue.Topology.DependencyInjection;
 using MessagingOverQueue.Test.Integration.Shared.Infrastructure;
 using MessagingOverQueue.Test.Integration.RedisStreams.Infrastructure;
@@ -394,6 +396,106 @@ public class MultiHandlerEventHandler2 : IMessageHandler<MultiHandlerEvent>
         => TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).WaitForCountAsync(expected, timeout);
 
     public Task HandleAsync(MultiHandlerEvent message, IMessageContext context, CancellationToken cancellationToken)
+    {
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Increment();
+        return Task.CompletedTask;
+    }
+}
+
+// ── Versioning binding test types ──────────────────────────────────────────
+
+/// <summary>Event with explicit version v1.</summary>
+[EventTopology(Category = "versioning", Name = "order-placed", Version = "v1")]
+public record VersionedV1Event : Event
+{
+    public string Value { get; set; } = string.Empty;
+}
+
+/// <summary>Event with explicit version v2 (separate stream from v1).</summary>
+[EventTopology(Category = "versioning", Name = "order-placed", Version = "v2")]
+public record VersionedV2Event : Event
+{
+    public string Value { get; set; } = string.Empty;
+}
+
+/// <summary>Event with no version attribute.</summary>
+[EventTopology(Category = "versioning", Name = "unversioned-order")]
+public record UnversionedEvent : Event
+{
+    public string Value { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// No [ConsumerTopology] — falls back to event version.
+/// Binds to stream: versioning.order-placed.v1
+/// Consumer group: test-service.order-placed
+/// </summary>
+public class VersionedV1Handler : IMessageHandler<VersionedV1Event>
+{
+    private const string HandlerKey = nameof(VersionedV1Handler);
+
+    public static int HandleCount =>
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Count;
+
+    public static void Reset() =>
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Reset();
+
+    public static Task WaitForCountAsync(int expected, TimeSpan timeout) =>
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).WaitForCountAsync(expected, timeout);
+
+    public Task HandleAsync(VersionedV1Event message, IMessageContext context, CancellationToken cancellationToken)
+    {
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Increment();
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// [ConsumerTopology(Version="v2")] overrides the event's v1.
+/// Binds to stream: versioning.order-placed.v2
+/// Consumer group: test-service.order-placed
+/// </summary>
+[ConsumerTopology(Version = "v2")]
+public class ConsumerOverridesVersionHandler : IMessageHandler<VersionedV1Event>
+{
+    private const string HandlerKey = nameof(ConsumerOverridesVersionHandler);
+
+    public static int HandleCount =>
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Count;
+
+    public static void Reset() =>
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Reset();
+
+    public static Task WaitForCountAsync(int expected, TimeSpan timeout) =>
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).WaitForCountAsync(expected, timeout);
+
+    public Task HandleAsync(VersionedV1Event message, IMessageContext context, CancellationToken cancellationToken)
+    {
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Increment();
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// [ConsumerTopology(Version="v1")] adds a version to an event that has none.
+/// Binds to stream: versioning.unversioned-order.v1
+/// Consumer group: test-service.unversioned-order
+/// </summary>
+[ConsumerTopology(Version = "v1")]
+public class ConsumerAddsVersionHandler : IMessageHandler<UnversionedEvent>
+{
+    private const string HandlerKey = nameof(ConsumerAddsVersionHandler);
+
+    public static int HandleCount =>
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Count;
+
+    public static void Reset() =>
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Reset();
+
+    public static Task WaitForCountAsync(int expected, TimeSpan timeout) =>
+        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).WaitForCountAsync(expected, timeout);
+
+    public Task HandleAsync(UnversionedEvent message, IMessageContext context, CancellationToken cancellationToken)
     {
         TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Increment();
         return Task.CompletedTask;
