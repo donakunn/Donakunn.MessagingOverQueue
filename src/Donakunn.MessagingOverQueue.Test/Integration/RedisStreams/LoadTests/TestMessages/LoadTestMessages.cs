@@ -13,6 +13,7 @@ namespace MessagingOverQueue.Test.Integration.RedisStreams.LoadTests.TestMessage
 /// <summary>
 /// Event type for load testing with timing instrumentation.
 /// </summary>
+[EventTopology(Category = "test-service")]
 public record LoadTestEvent : Event
 {
     /// <summary>

@@ -286,6 +286,38 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
         Assert.Contains(middlewares, m => m is RetryMiddleware);
     }
 
+    [Fact]
+    public async Task DelayedEvent_IsNotConsumedBeforeScheduledTime_ThenConsumedAfter()
+    {
+        // Arrange
+        SimpleTestEventHandler.Reset();
+
+        using var host = await BuildHostWithPersistence(persistence => persistence
+            .WithOutbox(opts =>
+            {
+                opts.BatchSize = 10;
+                opts.ProcessingInterval = TimeSpan.FromMilliseconds(200); // fast poll for test
+            }));
+
+        var shortDelay = TimeSpan.FromSeconds(2);
+
+        // Act — publish with delay (OutboxPublisher is scoped, resolve via scope)
+        using (var scope = host.Services.CreateScope())
+        {
+            var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
+            await ((IEventPublisher)outboxPublisher).PublishAsync(new SimpleTestEvent { Value = "delayed" }, shortDelay);
+        }
+
+        // Assert — not received immediately
+        await Task.Delay(500);
+        Assert.Equal(0, SimpleTestEventHandler.HandleCount);
+
+        // Assert — received after delay elapses
+        await SimpleTestEventHandler.WaitForCountAsync(1, TimeSpan.FromSeconds(5));
+        Assert.Equal(1, SimpleTestEventHandler.HandleCount);
+        Assert.Equal("delayed", SimpleTestEventHandler.HandledMessages.First().Value);
+    }
+
     private async Task<IHost> BuildHostWithPersistence(Action<IPersistenceBuilder> configurePersistence)
     {
         // Capture the test context to register in the host

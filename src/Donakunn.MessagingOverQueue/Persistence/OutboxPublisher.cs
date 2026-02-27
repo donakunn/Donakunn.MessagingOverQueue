@@ -71,6 +71,12 @@ public sealed class OutboxPublisher : IMessagePublisher, IEventPublisher, IComma
         return PublishAsync(@event, routing.ExchangeName, routing.RoutingKey, cancellationToken);
     }
 
+    public Task PublishAsync<T>(T @event, TimeSpan delay, CancellationToken cancellationToken = default) where T : IEvent
+    {
+        var routing = _routingResolver.ResolveRouting<T>();
+        return PublishDelayedAsync(@event, routing.ExchangeName, routing.RoutingKey, delay, cancellationToken);
+    }
+
     public Task SendAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand
     {
         var routing = _routingResolver.ResolveRouting<T>();
@@ -80,6 +86,42 @@ public sealed class OutboxPublisher : IMessagePublisher, IEventPublisher, IComma
     public Task SendAsync<T>(T command, string queueName, CancellationToken cancellationToken = default) where T : ICommand
     {
         return PublishAsync(command, string.Empty, queueName, cancellationToken);
+    }
+
+    public Task SendAsync<T>(T command, TimeSpan delay, CancellationToken cancellationToken = default) where T : ICommand
+    {
+        var routing = _routingResolver.ResolveRouting<T>();
+        return PublishDelayedAsync(command, string.Empty, routing.StreamKey, delay, cancellationToken);
+    }
+
+    private async Task PublishDelayedAsync<T>(
+        T message,
+        string? exchangeName,
+        string? routingKey,
+        TimeSpan delay,
+        CancellationToken cancellationToken)
+        where T : IMessage
+    {
+        var routing = _routingResolver.ResolveRouting<T>();
+        var queueName = routing.StreamKey;
+        var scheduledAt = DateTime.UtcNow.Add(delay);
+
+        var entry = MessageStoreEntry.CreateOutboxEntry(
+            message.Id,
+            message.MessageType,
+            _serializer.Serialize(message),
+            exchangeName,
+            routingKey,
+            queueName,
+            headers: null,
+            correlationId: message.CorrelationId,
+            scheduledAt: scheduledAt);
+
+        await _repository.AddAsync(entry, cancellationToken);
+
+        _logger.LogDebug(
+            "Scheduled message {MessageId} for delivery at {ScheduledAt} (delay: {Delay})",
+            message.Id, scheduledAt, delay);
     }
 }
 

@@ -348,4 +348,43 @@ public class OutboxProcessorTests
     }
 
     #endregion
+
+    #region ScheduledAt Tests
+
+    [Fact]
+    public void CreateOutboxEntry_WithScheduledAt_SetsField()
+    {
+        var scheduledAt = DateTime.UtcNow.AddMinutes(10);
+
+        var entry = MessageStoreEntry.CreateOutboxEntry(
+            id: Guid.NewGuid(),
+            messageType: "TestEvent",
+            payload: [],
+            exchangeName: null,
+            routingKey: null,
+            queueName: "test.queue",
+            headers: null,
+            correlationId: null,
+            scheduledAt: scheduledAt);
+
+        Assert.Equal(scheduledAt, entry.ScheduledAt);
+    }
+
+    [Fact]
+    public void CreateOutboxEntry_WithoutScheduledAt_LeavesFieldNull()
+    {
+        var entry = MessageStoreEntry.CreateOutboxEntry(
+            id: Guid.NewGuid(),
+            messageType: "TestEvent",
+            payload: [],
+            exchangeName: null,
+            routingKey: null,
+            queueName: "test.queue",
+            headers: null,
+            correlationId: null);
+
+        Assert.Null(entry.ScheduledAt);
+    }
+
+    #endregion
 }
