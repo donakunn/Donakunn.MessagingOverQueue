@@ -55,8 +55,15 @@ public sealed class RedisStreamsConsumerHostedService(
                 var consumer = CreateConsumer(registration);
                 _consumers.Add(consumer);
 
+                // Build a handler type filter so this consumer only dispatches to the
+                // handler(s) bound to its specific stream.  A null filter (empty HandlerTypes)
+                // falls back to dispatching all handlers — keeps backward compatibility.
+                IReadOnlySet<Type>? handlerTypeFilter = registration.HandlerTypes.Count > 0
+                    ? registration.HandlerTypes.ToHashSet()
+                    : null;
+
                 // Create handler that invokes the message pipeline
-                var handler = CreateMessageHandler(handlerInvokerRegistry);
+                var handler = CreateMessageHandler(handlerInvokerRegistry, handlerTypeFilter);
                 await consumer.StartAsync(handler, cancellationToken);
                 
                 logger.LogInformation("Started consumer for stream '{StreamKey}'", consumer.SourceName);
@@ -103,7 +110,8 @@ public sealed class RedisStreamsConsumerHostedService(
     }
 
     private Func<ConsumeContext, CancellationToken, Task> CreateMessageHandler(
-        IHandlerInvokerRegistry handlerInvokerRegistry)
+        IHandlerInvokerRegistry handlerInvokerRegistry,
+        IReadOnlySet<Type>? handlerTypeFilter = null)
     {
         // Resolve middlewares from a temporary scope to avoid root-provider scope validation errors.
         // IdempotencyMiddleware is scoped (depends on IInboxRepository) — we exclude it here
@@ -119,7 +127,7 @@ public sealed class RedisStreamsConsumerHostedService(
         // Build pipeline once — all remaining middlewares are singletons
         var pipeline = ConsumePipeline.Build(
             middlewares,
-            (ctx, ct) => HandleMessageAsync(ctx, ct, handlerInvokerRegistry));
+            (ctx, ct) => HandleMessageAsync(ctx, ct, handlerInvokerRegistry, handlerTypeFilter));
 
         return pipeline;
     }
@@ -127,7 +135,8 @@ public sealed class RedisStreamsConsumerHostedService(
     private async Task HandleMessageAsync(
         ConsumeContext context,
         CancellationToken cancellationToken,
-        IHandlerInvokerRegistry handlerInvokerRegistry)
+        IHandlerInvokerRegistry handlerInvokerRegistry,
+        IReadOnlySet<Type>? handlerTypeFilter = null)
     {
         if (context.Message == null || context.MessageType == null)
         {
@@ -158,7 +167,8 @@ public sealed class RedisStreamsConsumerHostedService(
             context.Message,
             context.MessageContext,
             context.Data,
-            cancellationToken);
+            cancellationToken,
+            handlerTypeFilter);
     }
 
     private static string BuildStreamKeyFromQueueName(string queueName, RedisStreamsOptions options)

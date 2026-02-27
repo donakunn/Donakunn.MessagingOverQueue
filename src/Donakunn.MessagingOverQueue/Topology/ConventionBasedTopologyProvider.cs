@@ -22,18 +22,15 @@ public sealed class ConventionBasedTopologyProvider(
     {
         ArgumentNullException.ThrowIfNull(messageType);
 
-        var existing = _registry.GetTopology(messageType);
-        if (existing != null)
-            return existing;
-
-        var definition = new TopologyDefinition
+        // Always compute stream key from the event's [EventTopology] attribute.
+        // Do NOT read consumer-registered topologies from the registry: a handler with
+        // [ConsumerTopology(Version="v2")] has its OWN consumer stream, but the publisher
+        // must still write to the event's canonical stream (v1).
+        return new TopologyDefinition
         {
             MessageType = messageType,
             StreamKey   = _namingConvention.GetStreamKey(messageType)
         };
-
-        _registry.Register(definition);
-        return definition;
     }
 
     public IReadOnlyCollection<TopologyDefinition> GetAllTopologies()

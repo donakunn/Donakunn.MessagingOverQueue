@@ -152,7 +152,11 @@ public static class TopologyServiceCollectionExtensions
         var handlerTopologies = scanner.ScanForHandlerTopology(assemblies);
 
         var result = new HandlerDiscoveryResult();
-        var registeredQueues = new HashSet<string>();
+
+        // Maps queue name → (options, accumulated handler types, consumer group name).
+        // Accumulating handler types per queue correctly handles both fan-out (multiple
+        // handlers on the same stream) and versioning (one handler per versioned stream).
+        var queueHandlerMap = new Dictionary<string, (ConsumerOptions Options, List<Type> HandlerTypes, string? ConsumerGroupName)>();
 
         foreach (var handlerInfo in handlerTopologies)
         {
@@ -168,11 +172,9 @@ public static class TopologyServiceCollectionExtensions
             // 3. Register message type for serialization
             RegisterMessageType(services, handlerInfo.MessageType);
 
-            // 4. Register consumer for this queue (avoid duplicates for shared queues)
-            if (!registeredQueues.Contains(registration.QueueName))
+            // 4. Accumulate handler types per queue (first handler wins for options)
+            if (!queueHandlerMap.ContainsKey(registration.QueueName))
             {
-                registeredQueues.Add(registration.QueueName);
-
                 var consumerOptions = new ConsumerOptions
                 {
                     QueueName = registration.QueueName,
@@ -180,16 +182,26 @@ public static class TopologyServiceCollectionExtensions
                     MaxConcurrency = registration.ConsumerConfig?.MaxConcurrency ?? 1
                 };
 
-                services.AddSingleton(new ConsumerRegistration
-                {
-                    Options = consumerOptions,
-                    HandlerType = handlerInfo.HandlerType,
-                    ConsumerGroupName = registration.TopologyDefinition.ConsumerGroupName
-                });
+                queueHandlerMap[registration.QueueName] = (consumerOptions, new List<Type>(), registration.TopologyDefinition.ConsumerGroupName);
             }
+
+            queueHandlerMap[registration.QueueName].HandlerTypes.Add(handlerInfo.HandlerType);
 
             // 5. Store handler registration for topology initialization
             result.AddRegistration(registration);
+        }
+
+        // Register one ConsumerRegistration per queue, each carrying the full set of
+        // handler types bound to that queue.
+        foreach (var (_, (options, handlerTypes, consumerGroupName)) in queueHandlerMap)
+        {
+            services.AddSingleton(new ConsumerRegistration
+            {
+                Options = options,
+                HandlerType = handlerTypes.Count > 0 ? handlerTypes[0] : null,
+                HandlerTypes = handlerTypes.AsReadOnly(),
+                ConsumerGroupName = consumerGroupName
+            });
         }
 
         return result;
