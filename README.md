@@ -10,6 +10,7 @@ Async messaging library for .NET 10 with Redis Streams. Implement `IMessageHandl
 - Reflection-free handler dispatch with O(1) lookup
 - Middleware pipeline (retry, circuit breaker, timeout, idempotency)
 - Outbox pattern with SQL Server provider
+- Delayed message delivery — schedule events and commands for future processing
 - Scoped DI — each message gets its own handler instance
 
 ## Installation
@@ -96,6 +97,20 @@ public class OrderController(IEventPublisher publisher) : ControllerBase
 }
 ```
 
+### Delayed Publishing
+
+Schedule a message for future delivery by passing a `TimeSpan` delay. Requires the outbox to be configured.
+
+```csharp
+// Deliver in 10 minutes
+await publisher.PublishAsync(new OrderReminderEvent { OrderId = id }, TimeSpan.FromMinutes(10));
+
+// Send a command after a delay
+await sender.SendAsync(new ExpireSessionCommand { UserId = userId }, TimeSpan.FromHours(1));
+```
+
+Calling the delay overload without the outbox configured throws `NotSupportedException` immediately, making misconfiguration explicit at the call site.
+
 ## Features
 
 **Handler Discovery** — `TopologyScanner` finds all `IMessageHandler<T>` implementations at startup. Streams, consumer groups, and consumers are created based on conventions or attributes. Override the consumer group with `[RedisConsumerGroup("custom-group")]`.
@@ -122,7 +137,7 @@ builder.UseResilience(r => r
     .WithTimeout(TimeSpan.FromSeconds(30)));
 ```
 
-**Outbox Pattern** — Reliable message delivery with SQL Server (ADO.NET, no EF Core dependency). Supports partition-based horizontal scaling with multiple workers. Configure via `UsePersistence`:
+**Outbox Pattern** — Reliable message delivery with SQL Server (ADO.NET, no EF Core dependency). Supports partition-based horizontal scaling with multiple workers, and delayed delivery via `ScheduledAt`. The `EnsureSchemaAsync` migration is idempotent — existing tables gain the `ScheduledAt` column automatically. Configure via `UsePersistence`:
 
 ```csharp
 builder.UsePersistence(p => p

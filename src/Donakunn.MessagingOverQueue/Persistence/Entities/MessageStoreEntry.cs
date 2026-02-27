@@ -93,6 +93,12 @@ public sealed class MessageStoreEntry
     public string? CorrelationId { get; set; }
 
     /// <summary>
+    /// When the message should become visible for processing (outbox only).
+    /// Null means immediately eligible.
+    /// </summary>
+    public DateTime? ScheduledAt { get; set; }
+
+    /// <summary>
     /// Creates an outbox entry for a message to be published.
     /// </summary>
     public static MessageStoreEntry CreateOutboxEntry(
@@ -103,7 +109,8 @@ public sealed class MessageStoreEntry
         string? routingKey,
         string? queueName,
         string? headers,
-        string? correlationId)
+        string? correlationId,
+        DateTime? scheduledAt = null)
     {
         return new MessageStoreEntry
         {
@@ -119,7 +126,8 @@ public sealed class MessageStoreEntry
             CorrelationId = correlationId,
             CreatedAt = DateTime.UtcNow,
             Status = MessageStatus.Pending,
-            RetryCount = 0
+            RetryCount = 0,
+            ScheduledAt = scheduledAt
         };
     }
 
