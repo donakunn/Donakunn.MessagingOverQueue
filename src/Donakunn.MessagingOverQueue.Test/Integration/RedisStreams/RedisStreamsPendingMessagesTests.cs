@@ -39,7 +39,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
         await Task.Delay(2000);
 
         // Assert
-        var streamKey = $"{StreamPrefix}:test-service.failing";
+        var streamKey = $"{StreamPrefix}:testdoubles.failing";
         var consumerGroup = "test-service.failing";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 
@@ -51,7 +51,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
     {
         // Arrange
         ClaimableEventHandler.Reset();
-        var streamKey = $"{StreamPrefix}:test-service.claimable";
+        var streamKey = $"{StreamPrefix}:redisstreams.claimable";
         var consumerGroup = "test-service.claimable";
 
         // Phase 1: Start first consumer, process message slowly, then stop
@@ -100,7 +100,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
         var publisher = host.Services.GetRequiredService<IEventPublisher>();
-        var streamKey = $"{StreamPrefix}:test-service.simple-test";
+        var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
 
         // Act - Publish message
@@ -143,7 +143,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
         await Task.Delay(3000);
 
         // Assert
-        var streamKey = $"{StreamPrefix}:test-service.selective-failure";
+        var streamKey = $"{StreamPrefix}:redisstreams.selective-failure";
         var consumerGroup = "test-service.selective-failure";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 
@@ -162,7 +162,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
             .WithDeadLetterPerStream(5));
 
         var publisher = host.Services.GetRequiredService<IEventPublisher>();
-        var streamKey = $"{StreamPrefix}:test-service.failing";
+        var streamKey = $"{StreamPrefix}:testdoubles.failing";
         var consumerGroup = "test-service.failing";
 
         // Act - Publish failing message
@@ -197,7 +197,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
             .WithDeadLetterPerStream(3)); // Low threshold for testing
 
         var publisher = host.Services.GetRequiredService<IEventPublisher>();
-        var streamKey = $"{StreamPrefix}:test-service.dlq-test";
+        var streamKey = $"{StreamPrefix}:redisstreams.dlq-test";
         var dlqStreamKey = $"{streamKey}:dlq";
 
         // Act - Publish message that will always fail
@@ -226,7 +226,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
             .WithDeadLetterPerStream(2));
 
         var publisher = host.Services.GetRequiredService<IEventPublisher>();
-        var streamKey = $"{StreamPrefix}:test-service.dlq-test";
+        var streamKey = $"{StreamPrefix}:redisstreams.dlq-test";
         var dlqStreamKey = $"{streamKey}:dlq";
 
         var testValue = $"DLQ-{Guid.NewGuid()}";
@@ -276,7 +276,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
 
         // Assert - Should eventually succeed
         // Note: Topology naming convention removes "Event" suffix
-        var streamKey = $"{StreamPrefix}:test-service.retryable";
+        var streamKey = $"{StreamPrefix}:redisstreams.retryable";
         var consumerGroup = "test-service.retryable";
 
         // Message should be processed and acknowledged
@@ -292,8 +292,8 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
     public async Task PEL_Specific_To_Consumer_Group()
     {
         // Arrange - Two different services
-        var service1StreamKey = $"{StreamPrefix}:service1.failing";
-        var service2StreamKey = $"{StreamPrefix}:service2.failing";
+        var service1StreamKey = $"{StreamPrefix}:testdoubles.failing";
+        var service2StreamKey = $"{StreamPrefix}:testdoubles.failing";
 
         using var service1 = await BuildHost(services =>
         {
@@ -367,7 +367,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
         await Task.Delay(3000);
 
         // Assert
-        var streamKey = $"{StreamPrefix}:test-service.failing";
+        var streamKey = $"{StreamPrefix}:testdoubles.failing";
         var consumerGroup = "test-service.failing";
         var pendingCount = await GetPendingMessagesCountAsync(streamKey, consumerGroup);
 

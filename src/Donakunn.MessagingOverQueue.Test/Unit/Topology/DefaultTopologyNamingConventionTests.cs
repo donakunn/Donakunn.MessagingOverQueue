@@ -6,264 +6,239 @@ using Donakunn.MessagingOverQueue.Topology.Conventions;
 namespace MessagingOverQueue.Test.Unit.Topology
 {
 
-public class DefaultTopologyNamingConventionTests
-{
-    private readonly DefaultTopologyNamingConvention _sut = new();
-
-    [Fact]
-    public void GetExchangeType_Event_ReturnsTopic()
+    public class DefaultTopologyNamingConventionTests
     {
-        Assert.Equal("topic", _sut.GetExchangeType(typeof(SampleEvent)));
+        private readonly DefaultTopologyNamingConvention _sut = new();
+
+        // ── GetStreamKey ───────────────────────────────────────────────────
+
+        [Fact]
+        public void GetStreamKey_NoAttribute_UsesNamespaceAndClassName()
+        {
+            var key = _sut.GetStreamKey(typeof(PlainEvent));
+            Assert.Equal("topology.plain", key);
+        }
+
+        [Fact]
+        public void GetStreamKey_WithName_UsesAttributeName()
+        {
+            var key = _sut.GetStreamKey(typeof(EventWithName));
+            Assert.Equal("topology.order-created", key);
+        }
+
+        [Fact]
+        public void GetStreamKey_WithNameAndVersion_AppendsVersion()
+        {
+            var key = _sut.GetStreamKey(typeof(EventWithVersion));
+            Assert.Equal("topology.order-created.v1", key);
+        }
+
+        [Fact]
+        public void GetStreamKey_WithAllFields_CombinesAll()
+        {
+            var key = _sut.GetStreamKey(typeof(EventWithAllFields));
+            Assert.Equal("orders.order-created.v2", key);
+        }
+
+        [Fact]
+        public void GetStreamKey_NoVersion_OmitsVersionSegment()
+        {
+            var key = _sut.GetStreamKey(typeof(EventWithCategory));
+            Assert.Equal("orders.event-with-category", key);
+        }
+
+        [Fact]
+        public void GetStreamKey_DoesNotContainDotHyphen()
+        {
+            var key = _sut.GetStreamKey(typeof(EventWithAllFields));
+            Assert.DoesNotContain(".-", key);
+        }
+
+        // ── GetConsumerNames — stream key ──────────────────────────────────
+
+        [Fact]
+        public void GetConsumerNames_NoAttributes_StreamKeyMatchesGetStreamKey()
+        {
+            var names = _sut.GetConsumerNames(typeof(PlainHandler), typeof(PlainEvent));
+            var publisherKey = _sut.GetStreamKey(typeof(PlainEvent));
+            Assert.Equal(publisherKey, names.StreamKey);
+        }
+
+        [Fact]
+        public void GetConsumerNames_ConsumerVersionOverridesEventVersion()
+        {
+            // Event is v1, consumer says v2 → subscribes to v2 stream
+            var names = _sut.GetConsumerNames(typeof(HandlerWithV2), typeof(EventWithVersion));
+            Assert.Equal("topology.order-created.v2", names.StreamKey);
+        }
+
+        [Fact]
+        public void GetConsumerNames_NoConsumerVersion_FallsBackToEventVersion()
+        {
+            var names = _sut.GetConsumerNames(typeof(PlainHandler), typeof(EventWithVersion));
+            Assert.Equal("topology.order-created.v1", names.StreamKey);
+        }
+
+        [Fact]
+        public void GetConsumerNames_StreamKeyCategoryAlwaysFromEvent()
+        {
+            // [ConsumerTopology(Category)] only affects consumer group, not stream key category
+            var names = _sut.GetConsumerNames(typeof(HandlerWithCategory), typeof(EventWithAllFields));
+            Assert.StartsWith("orders.", names.StreamKey);
+        }
+
+        // ── GetConsumerNames — consumer group ─────────────────────────────
+
+        [Fact]
+        public void GetConsumerNames_NoAttributes_GroupUsesNamespaceAndEventName()
+        {
+            var names = _sut.GetConsumerNames(typeof(PlainHandler), typeof(PlainEvent));
+            // PlainHandler is in namespace MessagingOverQueue.Test.Unit.Topology
+            // First non-generic segment: "MessagingOverQueue" → "messaging-over-queue"
+            // Event name: "plain"
+            Assert.EndsWith(".plain", names.ConsumerGroupName);
+        }
+
+        [Fact]
+        public void GetConsumerNames_WithServiceName_GroupUsesServiceName()
+        {
+            var sut = new DefaultTopologyNamingConvention(
+                new TopologyNamingOptions { ServiceName = "inventory-service" });
+            var names = sut.GetConsumerNames(typeof(PlainHandler), typeof(PlainEvent));
+            Assert.StartsWith("inventory-service.", names.ConsumerGroupName);
+        }
+
+        [Fact]
+        public void GetConsumerNames_ConsumerCategoryOverridesServiceName()
+        {
+            var names = _sut.GetConsumerNames(typeof(HandlerWithCategory), typeof(PlainEvent));
+            Assert.StartsWith("payments.", names.ConsumerGroupName);
+        }
+
+        [Fact]
+        public void GetConsumerNames_ConsumerNameOverridesEventName()
+        {
+            var names = _sut.GetConsumerNames(typeof(HandlerWithName), typeof(PlainEvent));
+            Assert.EndsWith(".audit-handler", names.ConsumerGroupName);
+        }
+
+        [Fact]
+        public void GetConsumerNames_AllConsumerFields_FullOverride()
+        {
+            var sut = new DefaultTopologyNamingConvention(
+                new TopologyNamingOptions { ServiceName = "default-service" });
+            var names = sut.GetConsumerNames(typeof(HandlerWithAllConsumerFields), typeof(EventWithAllFields));
+            Assert.Equal("billing.custom-handler", names.ConsumerGroupName);
+        }
+
+        [Fact]
+        public void GetConsumerNames_PascalCaseServiceName_KebabCased()
+        {
+            var names = _sut.GetConsumerNames(
+                typeof(InventoryService.HandlerInInventoryService),
+                typeof(PlainEvent));
+            Assert.StartsWith("inventory-service.", names.ConsumerGroupName);
+        }
+
+        // ── GetDeadLetterStreamKey ─────────────────────────────────────────
+
+        [Fact]
+        public void GetDeadLetterStreamKey_CombinesStreamKeyAndGroup()
+        {
+            var dlq = _sut.GetDeadLetterStreamKey("orders.order-created.v1", "inventory-service.order-created");
+            Assert.Equal("orders.order-created.v1:inventory-service.order-created:dlq", dlq);
+        }
+
+        // ── Test types ─────────────────────────────────────────────────────
+
+        internal class PlainEvent : IEvent
+        {
+            public Guid Id { get; } = Guid.NewGuid();
+            public DateTime Timestamp { get; } = DateTime.UtcNow;
+            public string? CorrelationId => null;
+            public string? CausationId => null;
+            public string MessageType => nameof(PlainEvent);
+        }
+
+        [EventTopology(Name = "order-created")]
+        private class EventWithName : IEvent
+        {
+            public Guid Id { get; } = Guid.NewGuid();
+            public DateTime Timestamp { get; } = DateTime.UtcNow;
+            public string? CorrelationId => null;
+            public string? CausationId => null;
+            public string MessageType => nameof(EventWithName);
+        }
+
+        [EventTopology(Name = "order-created", Version = "v1")]
+        private class EventWithVersion : IEvent
+        {
+            public Guid Id { get; } = Guid.NewGuid();
+            public DateTime Timestamp { get; } = DateTime.UtcNow;
+            public string? CorrelationId => null;
+            public string? CausationId => null;
+            public string MessageType => nameof(EventWithVersion);
+        }
+
+        [EventTopology(Category = "orders", Name = "order-created", Version = "v2")]
+        private class EventWithAllFields : IEvent
+        {
+            public Guid Id { get; } = Guid.NewGuid();
+            public DateTime Timestamp { get; } = DateTime.UtcNow;
+            public string? CorrelationId => null;
+            public string? CausationId => null;
+            public string MessageType => nameof(EventWithAllFields);
+        }
+
+        [EventTopology(Category = "orders")]
+        private class EventWithCategory : IEvent
+        {
+            public Guid Id { get; } = Guid.NewGuid();
+            public DateTime Timestamp { get; } = DateTime.UtcNow;
+            public string? CorrelationId => null;
+            public string? CausationId => null;
+            public string MessageType => nameof(EventWithCategory);
+        }
+
+        private class PlainHandler : IMessageHandler<PlainEvent>
+        {
+            public Task HandleAsync(PlainEvent m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
+        }
+
+        [ConsumerTopology(Version = "v2")]
+        private class HandlerWithV2 : IMessageHandler<EventWithVersion>
+        {
+            public Task HandleAsync(EventWithVersion m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
+        }
+
+        [ConsumerTopology(Category = "payments")]
+        private class HandlerWithCategory : IMessageHandler<PlainEvent>
+        {
+            public Task HandleAsync(PlainEvent m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
+        }
+
+        [ConsumerTopology(Name = "audit-handler")]
+        private class HandlerWithName : IMessageHandler<PlainEvent>
+        {
+            public Task HandleAsync(PlainEvent m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
+        }
+
+        [ConsumerTopology(Category = "billing", Name = "custom-handler")]
+        private class HandlerWithAllConsumerFields : IMessageHandler<EventWithAllFields>
+        {
+            public Task HandleAsync(EventWithAllFields m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
+        }
     }
-
-    [Fact]
-    public void GetExchangeType_Command_ReturnsDirect()
-    {
-        Assert.Equal("direct", _sut.GetExchangeType(typeof(SampleCommand)));
-    }
-
-    [Fact]
-    public void GetExchangeType_Generic_ReturnsTopic()
-    {
-        Assert.Equal("topic", _sut.GetExchangeType(typeof(SampleMessage)));
-    }
-
-    [Fact]
-    public void GetExchangeName_Event_NoDotHyphenInName()
-    {
-        var name = _sut.GetExchangeName(typeof(SampleEvent));
-        Assert.DoesNotContain(".-", name);
-        Assert.Equal("events.sample", name);
-    }
-
-    [Fact]
-    public void GetExchangeName_Command_NoDotHyphenInName()
-    {
-        var name = _sut.GetExchangeName(typeof(SampleCommand));
-        Assert.DoesNotContain(".-", name);
-        Assert.Equal("commands.sample", name);
-    }
-
-    [Fact]
-    public void GetExchangeName_MultiWordEvent_CorrectKebabCase()
-    {
-        var name = _sut.GetExchangeName(typeof(OrderCreatedEvent));
-        Assert.Equal("events.order-created", name);
-    }
-
-    [Fact]
-    public void GetDeadLetterExchangeName_ReturnsExpected()
-    {
-        Assert.Equal("dlx.inventory-service.order-created", _sut.GetDeadLetterExchangeName("inventory-service.order-created"));
-    }
-
-    [Fact]
-    public void GetDeadLetterQueueName_ReturnsExpected()
-    {
-        Assert.Equal("inventory-service.order-created.dlq", _sut.GetDeadLetterQueueName("inventory-service.order-created"));
-    }
-
-    [Fact]
-    public void GetConsumerQueueName_HandlerInPascalCaseNamespace_KebabCasedPrefix()
-    {
-        var queue = _sut.GetConsumerQueueName(
-            typeof(InventoryService.Handlers.SampleHandlerInInventoryService),
-            typeof(SampleEvent));
-        Assert.StartsWith("inventory-service.", queue);
-    }
-
-    // Task 3 tests — EventTopologyAttribute
-
-    [Fact]
-    public void GetExchangeName_WithEventTopologyName_UsesAttributeName()
-    {
-        var name = _sut.GetExchangeName(typeof(EventWithTopologyName));
-        Assert.Equal("events.payment-processed", name);
-    }
-
-    [Fact]
-    public void GetExchangeName_WithEventTopologyNameAndVersion_AppendsVersion()
-    {
-        var name = _sut.GetExchangeName(typeof(EventWithTopologyVersion));
-        Assert.Equal("events.payment-processed.v2", name);
-    }
-
-    [Fact]
-    public void GetRoutingKey_WithEventTopologyCategory_UsesCategoryFromAttribute()
-    {
-        var key = _sut.GetRoutingKey(typeof(CategoryOnlyEvent));
-        Assert.StartsWith("payments.", key);
-    }
-
-    [Fact]
-    public void GetRoutingKey_WithAllEventTopologyFields_UsesAllAttributeValues()
-    {
-        var key = _sut.GetRoutingKey(typeof(EventWithAllTopologyFields));
-        Assert.Equal("payments.payment-processed.v2", key);
-    }
-
-    [Fact]
-    public void GetQueueName_WithEventTopologyName_UsesAttributeNameAsMessageSegment()
-    {
-        var queue = _sut.GetQueueName(typeof(EventWithTopologyName));
-        Assert.EndsWith(".payment-processed", queue);
-    }
-
-    // Task 4 tests — ConsumerTopologyAttribute
-
-    [Fact]
-    public void GetConsumerQueueName_WithConsumerCategory_UsesCategoryAsPrefix()
-    {
-        var queue = _sut.GetConsumerQueueName(typeof(HandlerWithCategory), typeof(SampleEvent));
-        Assert.Equal("inventory.sample", queue);
-    }
-
-    [Fact]
-    public void GetConsumerQueueName_WithConsumerName_UsesNameAsMessageSegment()
-    {
-        var queue = _sut.GetConsumerQueueName(typeof(HandlerWithName), typeof(SampleEvent));
-        Assert.EndsWith(".my-consumer", queue);
-    }
-
-    [Fact]
-    public void GetConsumerQueueName_WithConsumerVersion_OverridesEventVersion()
-    {
-        var queue = _sut.GetConsumerQueueName(typeof(HandlerWithVersion), typeof(EventWithTopologyVersion));
-        Assert.EndsWith(".v3", queue);
-        Assert.DoesNotContain(".v2", queue);
-    }
-
-    [Fact]
-    public void GetConsumerQueueName_NoConsumerVersion_FallsBackToEventVersion()
-    {
-        var queue = _sut.GetConsumerQueueName(typeof(HandlerWithCategory), typeof(EventWithTopologyVersion));
-        Assert.EndsWith(".v2", queue);
-    }
-
-    [Fact]
-    public void GetConsumerQueueName_AllFieldsSet_FullOverride()
-    {
-        var queue = _sut.GetConsumerQueueName(typeof(HandlerWithAllFields), typeof(EventWithAllTopologyFields));
-        Assert.Equal("inventory.my-consumer.v3", queue);
-    }
-
-    #region Test Types
-
-    public class SampleEvent : IEvent
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(SampleEvent);
-    }
-
-    public class SampleCommand : ICommand
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(SampleCommand);
-    }
-
-    public class SampleMessage : IMessage
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(SampleMessage);
-    }
-
-    public class OrderCreatedEvent : IEvent
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(OrderCreatedEvent);
-    }
-
-    [EventTopology(Name = "payment-processed")]
-    public class EventWithTopologyName : IEvent
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(EventWithTopologyName);
-    }
-
-    [EventTopology(Name = "payment-processed", Version = "v2")]
-    public class EventWithTopologyVersion : IEvent
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(EventWithTopologyVersion);
-    }
-
-    [EventTopology(Category = "payments")]
-    public class CategoryOnlyEvent : IEvent
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(CategoryOnlyEvent);
-    }
-
-    [EventTopology(Category = "payments", Name = "payment-processed", Version = "v2")]
-    public class EventWithAllTopologyFields : IEvent
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(EventWithAllTopologyFields);
-    }
-
-    [ConsumerTopology(Category = "inventory")]
-    public class HandlerWithCategory : IMessageHandler<SampleEvent>
-    {
-        public Task HandleAsync(SampleEvent message, IMessageContext context, CancellationToken cancellationToken) => Task.CompletedTask;
-    }
-
-    [ConsumerTopology(Name = "my-consumer")]
-    public class HandlerWithName : IMessageHandler<SampleEvent>
-    {
-        public Task HandleAsync(SampleEvent message, IMessageContext context, CancellationToken cancellationToken) => Task.CompletedTask;
-    }
-
-    [ConsumerTopology(Version = "v3")]
-    public class HandlerWithVersion : IMessageHandler<SampleEvent>
-    {
-        public Task HandleAsync(SampleEvent message, IMessageContext context, CancellationToken cancellationToken) => Task.CompletedTask;
-    }
-
-    [ConsumerTopology(Category = "inventory", Name = "my-consumer", Version = "v3")]
-    public class HandlerWithAllFields : IMessageHandler<SampleEvent>
-    {
-        public Task HandleAsync(SampleEvent message, IMessageContext context, CancellationToken cancellationToken) => Task.CompletedTask;
-    }
-
-    #endregion
-}
 
 } // namespace MessagingOverQueue.Test.Unit.Topology
 
-namespace InventoryService.Handlers
+namespace InventoryService
 {
     using Donakunn.MessagingOverQueue.Abstractions.Consuming;
+    using static MessagingOverQueue.Test.Unit.Topology.DefaultTopologyNamingConventionTests;
 
-    internal class SampleHandlerInInventoryService
-        : IMessageHandler<MessagingOverQueue.Test.Unit.Topology.DefaultTopologyNamingConventionTests.SampleEvent>
+    internal class HandlerInInventoryService : IMessageHandler<PlainEvent>
     {
-        public Task HandleAsync(
-            MessagingOverQueue.Test.Unit.Topology.DefaultTopologyNamingConventionTests.SampleEvent message,
-            IMessageContext context,
-            CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task HandleAsync(PlainEvent m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
     }
 }

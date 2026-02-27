@@ -182,36 +182,28 @@ public sealed class RedisStreamsTopologyDeclarer : ITopologyDeclarer
 
     /// <summary>
     /// Builds the Redis stream key from the topology definition.
-    /// Uses queue name to match publisher and consumer stream key format.
     /// </summary>
     private string BuildStreamKey(TopologyDefinition definition)
     {
-        // Use queue name as stream key (matches publisher and consumer)
-        var streamName = definition.Queue.Name;
+        var streamName = definition.StreamKey;
 
         if (string.IsNullOrEmpty(_options.StreamPrefix))
-        {
             return streamName;
-        }
 
         return $"{_options.StreamPrefix}:{streamName}";
     }
 
     /// <summary>
     /// Gets the consumer group name for a topology definition.
-    /// Checks for RedisConsumerGroupAttribute override, otherwise uses queue name.
+    /// Checks for RedisConsumerGroupAttribute override, otherwise uses ConsumerGroupName.
     /// </summary>
     private static string GetConsumerGroupName(TopologyDefinition definition)
     {
-        // Check for attribute override on message type
         var attribute = definition.MessageType.GetCustomAttribute<RedisConsumerGroupAttribute>();
         if (attribute != null)
-        {
             return attribute.GroupName;
-        }
 
-        // Default to queue name from topology
-        return definition.Queue.Name;
+        return definition.ConsumerGroupName ?? definition.StreamKey;
     }
 
     /// <summary>
