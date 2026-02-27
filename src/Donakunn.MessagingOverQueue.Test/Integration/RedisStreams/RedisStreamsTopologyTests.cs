@@ -390,6 +390,68 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
         Assert.True(groupExists,
             $"[ConsumerTopology(Version=\"v1\")] should add version suffix to unversioned event's stream key");
     }
+
+    [Fact]
+    public async Task Handler_Without_Version_Override_Binds_To_Event_Version()
+    {
+        // A handler with no [ConsumerTopology] attribute receives messages
+        // published to the event's own versioned stream.
+        VersionedV1Handler.Reset();
+
+        using var host = await BuildHost<VersionedV1Handler>();
+        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+
+        // Act
+        await publisher.PublishAsync(new VersionedV1Event { Value = "versioned" });
+        await VersionedV1Handler.WaitForCountAsync(1, DefaultTimeout);
+
+        // Assert
+        Assert.Equal(1, VersionedV1Handler.HandleCount);
+    }
+
+    [Fact]
+    public async Task Publisher_Routes_To_Versioned_Stream()
+    {
+        // Publishing a versioned event writes the message to the versioned stream key,
+        // not a plain unversioned key.
+        var streamKey = $"{StreamPrefix}:versioning.order-placed.v1";
+
+        using var host = await BuildHost<VersionedV1Handler>();
+        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+
+        // Act
+        await publisher.PublishAsync(new VersionedV1Event { Value = "routing-test" });
+        await Task.Delay(500);
+
+        // Assert
+        var length = await GetStreamLengthAsync(streamKey);
+        Assert.True(length > 0,
+            $"Published VersionedV1Event should appear in versioned stream '{streamKey}'");
+    }
+
+    [Fact]
+    public async Task Two_Version_Overrides_Create_Independent_Streams()
+    {
+        // VersionedV1Handler subscribes to versioning.order-placed.v1
+        // ConsumerOverridesVersionHandler subscribes to versioning.order-placed.v2
+        // Publishing VersionedV1Event (goes to v1) should reach only the v1 handler.
+        VersionedV1Handler.Reset();
+        ConsumerOverridesVersionHandler.Reset();
+
+        using var host = await BuildHost<VersionedV1Handler>();
+        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+
+        // Act — publish to v1 stream
+        await publisher.PublishAsync(new VersionedV1Event { Value = "v1-message" });
+        await VersionedV1Handler.WaitForCountAsync(1, DefaultTimeout);
+
+        // Brief extra wait to confirm the v2-bound handler did not receive it
+        await Task.Delay(500);
+
+        // Assert
+        Assert.Equal(1, VersionedV1Handler.HandleCount);
+        Assert.Equal(0, ConsumerOverridesVersionHandler.HandleCount);
+    }
 }
 
 #region Additional Test Handlers
