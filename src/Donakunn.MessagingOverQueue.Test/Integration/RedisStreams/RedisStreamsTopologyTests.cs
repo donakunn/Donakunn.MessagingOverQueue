@@ -339,6 +339,57 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
         // Assert - Topology still exists
         Assert.True(await ConsumerGroupExistsAsync(streamKey, consumerGroup));
     }
+
+    [Fact]
+    public async Task Versioned_Event_Creates_Versioned_Stream_Key()
+    {
+        // Arrange
+        var streamKey = $"{StreamPrefix}:versioning.order-placed.v1";
+        var consumerGroup = "test-service.order-placed";
+
+        // Act
+        using var host = await BuildHost<VersionedV1Handler>();
+        await Task.Delay(1000);
+
+        // Assert
+        var groupExists = await ConsumerGroupExistsAsync(streamKey, consumerGroup);
+        Assert.True(groupExists,
+            $"Consumer group '{consumerGroup}' should be created on versioned stream '{streamKey}'");
+    }
+
+    [Fact]
+    public async Task Consumer_Version_Override_Binds_To_Different_Stream()
+    {
+        // Arrange — event is v1, handler overrides to v2
+        var v2StreamKey = $"{StreamPrefix}:versioning.order-placed.v2";
+        var consumerGroup = "test-service.order-placed";
+
+        // Act
+        using var host = await BuildHost<ConsumerOverridesVersionHandler>();
+        await Task.Delay(1000);
+
+        // Assert — group exists on the overridden v2 stream
+        var groupOnV2 = await ConsumerGroupExistsAsync(v2StreamKey, consumerGroup);
+        Assert.True(groupOnV2,
+            $"[ConsumerTopology(Version=\"v2\")] should bind consumer group to v2 stream, not the event's v1");
+    }
+
+    [Fact]
+    public async Task Consumer_Adds_Version_To_Unversioned_Event()
+    {
+        // Arrange — event has no version; handler declares v1
+        var streamKey = $"{StreamPrefix}:versioning.unversioned-order.v1";
+        var consumerGroup = "test-service.unversioned-order";
+
+        // Act
+        using var host = await BuildHost<ConsumerAddsVersionHandler>();
+        await Task.Delay(1000);
+
+        // Assert
+        var groupExists = await ConsumerGroupExistsAsync(streamKey, consumerGroup);
+        Assert.True(groupExists,
+            $"[ConsumerTopology(Version=\"v1\")] should add version suffix to unversioned event's stream key");
+    }
 }
 
 #region Additional Test Handlers
