@@ -6,10 +6,10 @@ using Donakunn.MessagingOverQueue.Topology;
 namespace Donakunn.MessagingOverQueue.RedisStreams;
 
 /// <summary>
-/// Redis Streams implementation of the message publisher interfaces.
+/// Redis Streams implementation of the message publisher interface.
 /// Wraps RedisStreamsPublisher with middleware pipeline support.
 /// </summary>
-internal sealed class RedisStreamsMessagePublisher : IMessagePublisher, IEventPublisher, ICommandSender
+internal sealed class RedisStreamsMessagePublisher : IMessagePublisher
 {
     private readonly RedisStreamsPublisher _publisher;
     private readonly IMessageRoutingResolver _routingResolver;
@@ -29,19 +29,14 @@ internal sealed class RedisStreamsMessagePublisher : IMessagePublisher, IEventPu
     }
 
     /// <inheritdoc />
-    public Task PublishAsync<T>(T message, string? exchangeName = null, string? routingKey = null, CancellationToken cancellationToken = default) where T : IMessage
+    public Task PublishAsync<T>(T message, CancellationToken cancellationToken = default) where T : IMessage
     {
-        return PublishAsync(message, new PublishOptions
-        {
-            ExchangeName = exchangeName,
-            RoutingKey = routingKey
-        }, cancellationToken);
+        return PublishAsync(message, new PublishOptions(), cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task PublishAsync<T>(T message, PublishOptions options, CancellationToken cancellationToken = default) where T : IMessage
     {
-        // Single cached lookup instead of 3 separate topology lookups
         var routing = _routingResolver.ResolveRouting<T>();
         var exchangeName = options.ExchangeName ?? routing.ExchangeName;
         var routingKey = options.RoutingKey ?? routing.RoutingKey;
@@ -70,26 +65,5 @@ internal sealed class RedisStreamsMessagePublisher : IMessagePublisher, IEventPu
         }
 
         await _pipeline(context, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task PublishAsync<T>(T @event, CancellationToken cancellationToken = default) where T : IEvent
-    {
-        var routing = _routingResolver.ResolveRouting<T>();
-        return PublishAsync(@event, routing.ExchangeName, routing.RoutingKey, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task SendAsync<T>(T command, CancellationToken cancellationToken = default) where T : ICommand
-    {
-        var routing = _routingResolver.ResolveRouting<T>();
-        return SendAsync(command, routing.QueueName, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task SendAsync<T>(T command, string queueName, CancellationToken cancellationToken = default) where T : ICommand
-    {
-        // Commands are sent directly to a specific stream (using queue name as routing key)
-        return PublishAsync(command, string.Empty, queueName, cancellationToken);
     }
 }

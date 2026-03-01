@@ -28,7 +28,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
     {
         // Arrange
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
 
         // Verify stream doesn't exist yet
@@ -72,7 +72,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
         ComplexTestEventHandler.Reset();
 
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Simple" });
@@ -102,7 +102,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
         using var host = await BuildHost<SimpleTestEventHandler>(options =>
             options.WithStreamPrefix(customPrefix));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Prefixed" });
@@ -128,7 +128,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
 
         using (var host2 = await BuildHost<SimpleTestEventHandler>())
         {
-            var publisher = host2.Services.GetRequiredService<IEventPublisher>();
+            var publisher = host2.Services.GetRequiredService<IMessagePublisher>();
             await publisher.PublishAsync(new SimpleTestEvent { Value = "Test" });
             await SimpleTestEventHandler.WaitForCountAsync(1, DefaultTimeout);
         }
@@ -184,7 +184,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
     {
         // Arrange
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Publish to create stream
         await publisher.PublishAsync(new SimpleTestEvent { Value = "List test" });
@@ -202,7 +202,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
     {
         // Arrange
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Publish to ensure stream exists
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Info test" });
@@ -226,7 +226,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
     {
         // Arrange
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         const int messageCount = 5;
 
         // Act
@@ -280,7 +280,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
     {
         // Arrange
         using var host = await BuildHost<CustomQueueEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new CustomQueueEvent { Data = "Custom" });
@@ -299,7 +299,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
         MultiHandlerEventHandler2.Reset();
 
         using var host = await BuildHost<MultiHandlerEventHandler1>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new MultiHandlerEvent { Payload = "Shared" });
@@ -358,40 +358,6 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
     }
 
     [Fact]
-    public async Task Consumer_Version_Override_Binds_To_Different_Stream()
-    {
-        // Arrange — event is v1, handler overrides to v2
-        var v2StreamKey = $"{StreamPrefix}:versioning.order-placed.v2";
-        var consumerGroup = "test-service.order-placed";
-
-        // Act
-        using var host = await BuildHost<ConsumerOverridesVersionHandler>();
-        await Task.Delay(1000);
-
-        // Assert — group exists on the overridden v2 stream
-        var groupOnV2 = await ConsumerGroupExistsAsync(v2StreamKey, consumerGroup);
-        Assert.True(groupOnV2,
-            $"[ConsumerTopology(Version=\"v2\")] should bind consumer group to v2 stream, not the event's v1");
-    }
-
-    [Fact]
-    public async Task Consumer_Adds_Version_To_Unversioned_Event()
-    {
-        // Arrange — event has no version; handler declares v1
-        var streamKey = $"{StreamPrefix}:versioning.unversioned-order.v1";
-        var consumerGroup = "test-service.unversioned-order";
-
-        // Act
-        using var host = await BuildHost<ConsumerAddsVersionHandler>();
-        await Task.Delay(1000);
-
-        // Assert
-        var groupExists = await ConsumerGroupExistsAsync(streamKey, consumerGroup);
-        Assert.True(groupExists,
-            $"[ConsumerTopology(Version=\"v1\")] should add version suffix to unversioned event's stream key");
-    }
-
-    [Fact]
     public async Task Handler_Without_Version_Override_Binds_To_Event_Version()
     {
         // A handler with no [ConsumerTopology] attribute receives messages
@@ -399,7 +365,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
         VersionedV1Handler.Reset();
 
         using var host = await BuildHost<VersionedV1Handler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new VersionedV1Event { Value = "versioned" });
@@ -417,7 +383,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
         var streamKey = $"{StreamPrefix}:versioning.order-placed.v1";
 
         using var host = await BuildHost<VersionedV1Handler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new VersionedV1Event { Value = "routing-test" });
@@ -429,29 +395,6 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
             $"Published VersionedV1Event should appear in versioned stream '{streamKey}'");
     }
 
-    [Fact]
-    public async Task Two_Version_Overrides_Create_Independent_Streams()
-    {
-        // VersionedV1Handler subscribes to versioning.order-placed.v1
-        // ConsumerOverridesVersionHandler subscribes to versioning.order-placed.v2
-        // Publishing VersionedV1Event (goes to v1) should reach only the v1 handler.
-        VersionedV1Handler.Reset();
-        ConsumerOverridesVersionHandler.Reset();
-
-        using var host = await BuildHost<VersionedV1Handler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
-
-        // Act — publish to v1 stream
-        await publisher.PublishAsync(new VersionedV1Event { Value = "v1-message" });
-        await VersionedV1Handler.WaitForCountAsync(1, DefaultTimeout);
-
-        // Brief extra wait to confirm the v2-bound handler did not receive it
-        await Task.Delay(500);
-
-        // Assert
-        Assert.Equal(1, VersionedV1Handler.HandleCount);
-        Assert.Equal(0, ConsumerOverridesVersionHandler.HandleCount);
-    }
 }
 
 #region Additional Test Handlers
@@ -519,21 +462,21 @@ public class MultiHandlerEventHandler2 : IMessageHandler<MultiHandlerEvent>
 
 /// <summary>Event with explicit version v1.</summary>
 [EventTopology(Category = "versioning", Name = "order-placed", Version = "v1")]
-public record VersionedV1Event : Event
+public record VersionedV1Event : MessageBase
 {
     public string Value { get; set; } = string.Empty;
 }
 
 /// <summary>Event with explicit version v2 (separate stream from v1).</summary>
 [EventTopology(Category = "versioning", Name = "order-placed", Version = "v2")]
-public record VersionedV2Event : Event
+public record VersionedV2Event : MessageBase
 {
     public string Value { get; set; } = string.Empty;
 }
 
 /// <summary>Event with no version attribute.</summary>
 [EventTopology(Category = "versioning", Name = "unversioned-order")]
-public record UnversionedEvent : Event
+public record UnversionedEvent : MessageBase
 {
     public string Value { get; set; } = string.Empty;
 }
@@ -557,58 +500,6 @@ public class VersionedV1Handler : IMessageHandler<VersionedV1Event>
         TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).WaitForCountAsync(expected, timeout);
 
     public Task HandleAsync(VersionedV1Event message, IMessageContext context, CancellationToken cancellationToken)
-    {
-        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Increment();
-        return Task.CompletedTask;
-    }
-}
-
-/// <summary>
-/// [ConsumerTopology(Version="v2")] overrides the event's v1.
-/// Binds to stream: versioning.order-placed.v2
-/// Consumer group: test-service.order-placed
-/// </summary>
-[ConsumerTopology(Version = "v2")]
-public class ConsumerOverridesVersionHandler : IMessageHandler<VersionedV1Event>
-{
-    private const string HandlerKey = nameof(ConsumerOverridesVersionHandler);
-
-    public static int HandleCount =>
-        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Count;
-
-    public static void Reset() =>
-        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Reset();
-
-    public static Task WaitForCountAsync(int expected, TimeSpan timeout) =>
-        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).WaitForCountAsync(expected, timeout);
-
-    public Task HandleAsync(VersionedV1Event message, IMessageContext context, CancellationToken cancellationToken)
-    {
-        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Increment();
-        return Task.CompletedTask;
-    }
-}
-
-/// <summary>
-/// [ConsumerTopology(Version="v1")] adds a version to an event that has none.
-/// Binds to stream: versioning.unversioned-order.v1
-/// Consumer group: test-service.unversioned-order
-/// </summary>
-[ConsumerTopology(Version = "v1")]
-public class ConsumerAddsVersionHandler : IMessageHandler<UnversionedEvent>
-{
-    private const string HandlerKey = nameof(ConsumerAddsVersionHandler);
-
-    public static int HandleCount =>
-        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Count;
-
-    public static void Reset() =>
-        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Reset();
-
-    public static Task WaitForCountAsync(int expected, TimeSpan timeout) =>
-        TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).WaitForCountAsync(expected, timeout);
-
-    public Task HandleAsync(UnversionedEvent message, IMessageContext context, CancellationToken cancellationToken)
     {
         TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Increment();
         return Task.CompletedTask;

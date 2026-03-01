@@ -127,9 +127,6 @@ public static class RedisStreamsServiceCollectionExtensions
         // Core connection services
         services.TryAddSingleton<IRedisConnectionPool, RedisConnectionPool>();
 
-        // Register messaging provider abstraction for Redis Streams
-        services.TryAddSingleton<IMessagingProvider, RedisStreamsMessagingProvider>();
-
         // Redis Streams specific services
         services.TryAddSingleton<RedisStreamsPublisher>();
         services.TryAddSingleton<IInternalPublisher>(sp => sp.GetRequiredService<RedisStreamsPublisher>());
@@ -145,12 +142,6 @@ public static class RedisStreamsServiceCollectionExtensions
                 sp.GetRequiredService<RedisStreamsPublisher>(),
                 sp.GetServices<IPublishMiddleware>(),
                 sp.GetRequiredService<IMessageRoutingResolver>()));
-
-        services.TryAddSingleton<IEventPublisher>(sp =>
-            (IEventPublisher)sp.GetRequiredService<IMessagePublisher>());
-
-        services.TryAddSingleton<ICommandSender>(sp =>
-            (ICommandSender)sp.GetRequiredService<IMessagePublisher>());
 
         // Serialization services (shared with core)
         services.TryAddSingleton<IMessageSerializer, JsonMessageSerializer>();
@@ -186,7 +177,9 @@ public static class RedisStreamsServiceCollectionExtensions
         // Registration is deferred to AddRedisStreamsConsumerHostedService extension method
         // which should be called after AddTopology.
 
-        return new MessagingBuilder(services);
+        var builder = new MessagingBuilder(services);
+        builder.HasQueueProvider = true;
+        return builder;
     }
 
     /// <summary>

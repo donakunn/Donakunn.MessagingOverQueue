@@ -22,10 +22,8 @@ public sealed class ConventionBasedTopologyProvider(
     {
         ArgumentNullException.ThrowIfNull(messageType);
 
-        // Always compute stream key from the event's [EventTopology] attribute.
-        // Do NOT read consumer-registered topologies from the registry: a handler with
-        // [ConsumerTopology(Version="v2")] has its OWN consumer stream, but the publisher
-        // must still write to the event's canonical stream (v1).
+        // Always compute stream key from the message's [EventTopology] attribute.
+        // The publisher always writes to the event's canonical stream.
         return new TopologyDefinition
         {
             MessageType = messageType,

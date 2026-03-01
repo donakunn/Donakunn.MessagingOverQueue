@@ -34,7 +34,7 @@ public class DeserializationMiddleware : IOrderedConsumeMiddleware
         try
         {
             // Try to get message type from headers first, then fall back to context.Data
-            // (Redis Streams stores it in Data, RabbitMQ uses Headers)
+            // (Redis Streams stores it in Data, other providers may use Headers)
             var messageTypeName = context.Headers.TryGetValue("message-type", out var typeHeader)
                 ? typeHeader?.ToString()
                 : null;

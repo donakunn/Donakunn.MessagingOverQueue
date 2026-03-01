@@ -180,7 +180,7 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
         using (var scope = host.Services.CreateScope())
         {
             var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            await ((IEventPublisher)outboxPublisher).PublishAsync(testEvent);
+            await ((IMessagePublisher)outboxPublisher).PublishAsync(testEvent);
         }
 
         // Assert - verify message was stored
@@ -217,7 +217,7 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
         // Act - publish the same message multiple times directly to Redis
         using (var scope = host.Services.CreateScope())
         {
-            var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
+            var publisher = scope.ServiceProvider.GetRequiredService<IMessagePublisher>();
 
             // Publish same message 3 times
             await publisher.PublishAsync(testEvent);
@@ -270,7 +270,7 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
 
         using var host = await BuildHostWithPersistenceAndResilience();
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Combined Test" });
@@ -305,7 +305,7 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
         using (var scope = host.Services.CreateScope())
         {
             var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            await ((IEventPublisher)outboxPublisher).PublishAsync(new SimpleTestEvent { Value = "delayed" }, shortDelay);
+            await ((IMessagePublisher)outboxPublisher).PublishAsync(new SimpleTestEvent { Value = "delayed" }, shortDelay);
         }
 
         // Assert — not received immediately

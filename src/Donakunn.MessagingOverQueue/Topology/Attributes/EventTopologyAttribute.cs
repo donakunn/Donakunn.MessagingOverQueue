@@ -2,7 +2,7 @@ namespace Donakunn.MessagingOverQueue.Topology.Attributes;
 
 /// <summary>
 /// Overrides topology naming for an event type.
-/// Applied to message types implementing IEvent.
+/// Applied to message types implementing IMessage.
 /// Unset properties fall back to convention-based naming.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]

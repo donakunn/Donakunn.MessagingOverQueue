@@ -45,7 +45,7 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
         // Stream key: category and name always from event; version from consumer first
         var eventName     = FormatName(eventAttr?.Name ?? GetBaseName(messageType));
         var eventCategory = FormatName(eventAttr?.Category ?? ExtractCategory(messageType));
-        var version       = consumerAttr?.Version ?? eventAttr?.Version;
+        var version       = eventAttr?.Version;
 
         var streamKey = version is null
             ? $"{eventCategory}.{eventName}"
@@ -109,9 +109,7 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
 
         foreach (var part in ns.Split('.').Reverse())
         {
-            if (!part.Equals("Events",   StringComparison.OrdinalIgnoreCase) &&
-                !part.Equals("Commands", StringComparison.OrdinalIgnoreCase) &&
-                !part.Equals("Messages", StringComparison.OrdinalIgnoreCase))
+            if (!part.Equals("Messages", StringComparison.OrdinalIgnoreCase))
             {
                 return part.ToLowerInvariant();
             }
@@ -149,5 +147,5 @@ public sealed class TopologyNamingOptions
     /// <summary>
     /// Type name suffixes stripped before name formatting.
     /// </summary>
-    public string[] SuffixesToRemove { get; set; } = ["Command", "Event", "Message", "Query"];
+    public string[] SuffixesToRemove { get; set; } = ["Message"];
 }

@@ -137,7 +137,7 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
     /// <summary>
     /// Performs warmup by publishing and consuming a small number of messages.
     /// </summary>
-    protected async Task WarmupAsync<THandler>(IEventPublisher publisher, int count = 0)
+    protected async Task WarmupAsync<THandler>(IMessagePublisher publisher, int count = 0)
         where THandler : class
     {
         count = count > 0 ? count : Config.WarmupMessageCount;
@@ -208,7 +208,7 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
     /// Publishes messages at a controlled rate.
     /// </summary>
     protected async Task PublishAtRateAsync(
-        IEventPublisher publisher,
+        IMessagePublisher publisher,
         int targetRps,
         TimeSpan duration,
         Func<long, LoadTestEvent>? messageFactory = null)
@@ -249,7 +249,7 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
     /// Better for latency testing where consistent timing is important.
     /// </summary>
     protected async Task PublishAtPreciseRateAsync(
-        IEventPublisher publisher,
+        IMessagePublisher publisher,
         int targetRps,
         TimeSpan duration)
     {

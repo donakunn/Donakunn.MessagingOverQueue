@@ -20,9 +20,4 @@ public sealed class ConsumerTopologyAttribute : Attribute
     /// </summary>
     public string? Name { get; init; }
 
-    /// <summary>
-    /// Version suffix for the queue. Overrides EventTopology.Version when set.
-    /// No version suffix when null (falls back to EventTopology.Version).
-    /// </summary>
-    public string? Version { get; init; }
 }

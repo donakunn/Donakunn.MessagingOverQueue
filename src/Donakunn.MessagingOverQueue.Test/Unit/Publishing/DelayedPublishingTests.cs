@@ -1,49 +1,29 @@
 using Donakunn.MessagingOverQueue.Abstractions.Messages;
 using Donakunn.MessagingOverQueue.Abstractions.Publishing;
 using Donakunn.MessagingOverQueue.Abstractions.Serialization;
+using Donakunn.MessagingOverQueue.Configuration.Options;
 using Donakunn.MessagingOverQueue.Persistence;
 using Donakunn.MessagingOverQueue.Persistence.Entities;
 using Donakunn.MessagingOverQueue.Persistence.Repositories;
 using Donakunn.MessagingOverQueue.Topology;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace MessagingOverQueue.Test.Unit.Publishing;
 
 public class DelayedPublishingTests
 {
-    private record TestEvent : Event { }
-    private record TestCommand : Command { }
+    private record TestMessage : MessageBase { }
 
-    [Fact]
-    public async Task IEventPublisher_PublishWithDelay_ThrowsWhenNotOutbox()
+    private MessageStoreEntry? _capturedEntry;
+
+    private OutboxPublisher CreateOutboxPublisher(TimeSpan? maxDelay = null)
     {
-        // Arrange — a bare implementation that only handles the immediate overload
-        IEventPublisher publisher = new NonOutboxPublisher();
-
-        // Act & Assert
-        await Assert.ThrowsAsync<NotSupportedException>(
-            () => publisher.PublishAsync(new TestEvent(), TimeSpan.FromMinutes(1)));
-    }
-
-    [Fact]
-    public async Task ICommandSender_SendWithDelay_ThrowsWhenNotOutbox()
-    {
-        ICommandSender sender = new NonOutboxPublisher();
-
-        await Assert.ThrowsAsync<NotSupportedException>(
-            () => sender.SendAsync(new TestCommand(), TimeSpan.FromMinutes(1)));
-    }
-
-    [Fact]
-    public async Task OutboxPublisher_PublishWithDelay_SetsScheduledAt()
-    {
-        // Arrange
-        var capturedEntry = (MessageStoreEntry?)null;
         var mockRepo = new Mock<IOutboxRepository>();
         mockRepo
             .Setup(r => r.AddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()))
-            .Callback<MessageStoreEntry, CancellationToken>((e, _) => capturedEntry = e)
+            .Callback<MessageStoreEntry, CancellationToken>((e, _) => _capturedEntry = e)
             .Returns(Task.CompletedTask);
 
         var mockSerializer = new Mock<IMessageSerializer>();
@@ -53,66 +33,89 @@ public class DelayedPublishingTests
 
         var mockResolver = new Mock<IMessageRoutingResolver>();
         mockResolver
-            .Setup(r => r.ResolveRouting<TestEvent>())
-            .Returns(new RoutingInfo("test.test-event"));
+            .Setup(r => r.ResolveRouting<TestMessage>())
+            .Returns(new RoutingInfo("test.test-message"));
 
+        var options = new OutboxOptions();
+        if (maxDelay.HasValue)
+            options.MaxDelay = maxDelay.Value;
+
+        var mockOptions = Options.Create(options);
         var mockLogger = new Mock<ILogger<OutboxPublisher>>();
 
-        IEventPublisher publisher = new OutboxPublisher(
-            mockRepo.Object, mockSerializer.Object, mockResolver.Object, mockLogger.Object);
+        return new OutboxPublisher(
+            mockRepo.Object, mockSerializer.Object, mockResolver.Object, mockOptions, mockLogger.Object);
+    }
 
+    [Fact]
+    public async Task IMessagePublisher_PublishWithDelay_ThrowsWhenNotOutbox()
+    {
+        IMessagePublisher publisher = new NonOutboxPublisher();
+
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () => publisher.PublishAsync(new TestMessage(), TimeSpan.FromMinutes(1)));
+    }
+
+    [Fact]
+    public async Task OutboxPublisher_PublishWithDelay_SetsScheduledAt()
+    {
+        var publisher = CreateOutboxPublisher();
         var before = DateTime.UtcNow;
         var delay = TimeSpan.FromMinutes(10);
 
-        // Act
-        await publisher.PublishAsync(new TestEvent(), delay);
+        await publisher.PublishAsync(new TestMessage(), delay);
 
-        // Assert
-        Assert.NotNull(capturedEntry);
-        Assert.NotNull(capturedEntry!.ScheduledAt);
-        Assert.True(capturedEntry.ScheduledAt >= before.Add(delay));
-        Assert.True(capturedEntry.ScheduledAt <= DateTime.UtcNow.Add(delay).AddSeconds(1));
+        Assert.NotNull(_capturedEntry);
+        Assert.NotNull(_capturedEntry!.ScheduledAt);
+        Assert.True(_capturedEntry.ScheduledAt >= before.Add(delay));
+        Assert.True(_capturedEntry.ScheduledAt <= DateTime.UtcNow.Add(delay).AddSeconds(1));
     }
 
     [Fact]
     public async Task OutboxPublisher_PublishWithoutDelay_LeavesScheduledAtNull()
     {
-        var capturedEntry = (MessageStoreEntry?)null;
-        var mockRepo = new Mock<IOutboxRepository>();
-        mockRepo
-            .Setup(r => r.AddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()))
-            .Callback<MessageStoreEntry, CancellationToken>((e, _) => capturedEntry = e)
-            .Returns(Task.CompletedTask);
+        var publisher = CreateOutboxPublisher();
 
-        var mockSerializer = new Mock<IMessageSerializer>();
-        mockSerializer.Setup(s => s.Serialize(It.IsAny<IMessage>())).Returns([]);
+        await publisher.PublishAsync(new TestMessage());
 
-        var mockResolver = new Mock<IMessageRoutingResolver>();
-        mockResolver
-            .Setup(r => r.ResolveRouting<TestEvent>())
-            .Returns(new RoutingInfo("test.test-event"));
+        Assert.NotNull(_capturedEntry);
+        Assert.Null(_capturedEntry!.ScheduledAt);
+    }
 
-        var mockLogger = new Mock<ILogger<OutboxPublisher>>();
+    [Fact]
+    public async Task PublishWithDelay_NegativeDelay_ThrowsArgumentOutOfRangeException()
+    {
+        var publisher = CreateOutboxPublisher();
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => publisher.PublishAsync(new TestMessage(), TimeSpan.FromSeconds(-1)));
+    }
 
-        IEventPublisher publisher = new OutboxPublisher(
-            mockRepo.Object, mockSerializer.Object, mockResolver.Object, mockLogger.Object);
+    [Fact]
+    public async Task PublishWithDelay_ExceedsMaxDelay_ThrowsArgumentOutOfRangeException()
+    {
+        var publisher = CreateOutboxPublisher(maxDelay: TimeSpan.FromHours(1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => publisher.PublishAsync(new TestMessage(), TimeSpan.FromHours(2)));
+    }
 
-        await publisher.PublishAsync(new TestEvent());
-
-        Assert.NotNull(capturedEntry);
-        Assert.Null(capturedEntry!.ScheduledAt);
+    [Fact]
+    public async Task PublishWithDelay_ZeroDelay_SetsScheduledAtToNow()
+    {
+        var before = DateTime.UtcNow;
+        var publisher = CreateOutboxPublisher();
+        await publisher.PublishAsync(new TestMessage(), TimeSpan.Zero);
+        Assert.NotNull(_capturedEntry!.ScheduledAt);
+        Assert.True(_capturedEntry.ScheduledAt >= before);
+        Assert.True(_capturedEntry.ScheduledAt <= DateTime.UtcNow.AddSeconds(1));
     }
 
     // Minimal non-outbox publisher stub
-    private sealed class NonOutboxPublisher : IEventPublisher, ICommandSender
+    private sealed class NonOutboxPublisher : IMessagePublisher
     {
-        public Task PublishAsync<T>(T @event, CancellationToken cancellationToken = default)
-            where T : IEvent => Task.CompletedTask;
+        public Task PublishAsync<T>(T message, CancellationToken cancellationToken = default)
+            where T : IMessage => Task.CompletedTask;
 
-        public Task SendAsync<T>(T command, CancellationToken cancellationToken = default)
-            where T : ICommand => Task.CompletedTask;
-
-        public Task SendAsync<T>(T command, string queueName, CancellationToken cancellationToken = default)
-            where T : ICommand => Task.CompletedTask;
+        public Task PublishAsync<T>(T message, PublishOptions options, CancellationToken cancellationToken = default)
+            where T : IMessage => Task.CompletedTask;
     }
 }

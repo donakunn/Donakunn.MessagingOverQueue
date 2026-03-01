@@ -13,34 +13,10 @@ public class TopologyScannerTests
     private readonly TopologyScanner _scanner = new();
 
     [Fact]
-    public void ScanForMessageTypes_FindsEventTypes()
+    public void ScanForMessageTypes_FindsMessageTypes()
     {
-        var messageTypes = _scanner.ScanForMessageTypes(typeof(TestEvent).Assembly);
-        Assert.Contains(messageTypes, m => m.MessageType == typeof(TestEvent));
-    }
-
-    [Fact]
-    public void ScanForMessageTypes_FindsCommandTypes()
-    {
-        var messageTypes = _scanner.ScanForMessageTypes(typeof(TestCommand).Assembly);
-        var commandType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(TestCommand));
-        Assert.NotNull(commandType);
-        Assert.True(commandType.IsCommand);
-        Assert.False(commandType.IsEvent);
-    }
-
-    [Fact]
-    public void ScanForMessageTypes_CorrectlyIdentifiesEventVsCommand()
-    {
-        var messageTypes = _scanner.ScanForMessageTypes(typeof(TestEvent).Assembly);
-        var eventType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(TestEvent));
-        var commandType = messageTypes.FirstOrDefault(m => m.MessageType == typeof(TestCommand));
-        Assert.NotNull(eventType);
-        Assert.NotNull(commandType);
-        Assert.True(eventType.IsEvent);
-        Assert.False(eventType.IsCommand);
-        Assert.True(commandType.IsCommand);
-        Assert.False(commandType.IsEvent);
+        var messageTypes = _scanner.ScanForMessageTypes(typeof(TestMessage).Assembly);
+        Assert.Contains(messageTypes, m => m.MessageType == typeof(TestMessage));
     }
 
     [Fact]
@@ -66,17 +42,17 @@ public class TopologyScannerTests
     [Fact]
     public void ScanForHandlers_FindsHandlerTypes()
     {
-        var handlers = _scanner.ScanForHandlers(typeof(TestEventHandler).Assembly);
-        Assert.Contains(handlers, h => h.HandlerType == typeof(TestEventHandler));
+        var handlers = _scanner.ScanForHandlers(typeof(TestMessageHandler).Assembly);
+        Assert.Contains(handlers, h => h.HandlerType == typeof(TestMessageHandler));
     }
 
     [Fact]
     public void ScanForHandlers_IdentifiesMessageType()
     {
-        var handlers = _scanner.ScanForHandlers(typeof(TestEventHandler).Assembly);
-        var handler = handlers.FirstOrDefault(h => h.HandlerType == typeof(TestEventHandler));
+        var handlers = _scanner.ScanForHandlers(typeof(TestMessageHandler).Assembly);
+        var handler = handlers.FirstOrDefault(h => h.HandlerType == typeof(TestMessageHandler));
         Assert.NotNull(handler);
-        Assert.Equal(typeof(TestEvent), handler.MessageType);
+        Assert.Equal(typeof(TestMessage), handler.MessageType);
     }
 
     [Fact]
@@ -89,12 +65,10 @@ public class TopologyScannerTests
     [Fact]
     public void ScanForHandlerTopology_ReturnsCompleteInfo()
     {
-        var topologyInfos = _scanner.ScanForHandlerTopology(typeof(TestEventHandler).Assembly);
-        var info = topologyInfos.FirstOrDefault(t => t.HandlerType == typeof(TestEventHandler));
+        var topologyInfos = _scanner.ScanForHandlerTopology(typeof(TestMessageHandler).Assembly);
+        var info = topologyInfos.FirstOrDefault(t => t.HandlerType == typeof(TestMessageHandler));
         Assert.NotNull(info);
-        Assert.Equal(typeof(TestEvent), info.MessageType);
-        Assert.True(info.IsEvent);
-        Assert.False(info.IsCommand);
+        Assert.Equal(typeof(TestMessage), info.MessageType);
     }
 
     [Fact]
@@ -123,7 +97,7 @@ public class TopologyScannerTests
         var tasks = Enumerable.Range(0, iterations)
             .Select(_ => Task.Run(() =>
             {
-                var handlers = _scanner.ScanForHandlers(typeof(TestEventHandler).Assembly);
+                var handlers = _scanner.ScanForHandlers(typeof(TestMessageHandler).Assembly);
                 results.Add(handlers);
             }));
 
@@ -136,44 +110,21 @@ public class TopologyScannerTests
 
     #region Test Types
 
-    public class TestEvent : IEvent
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(TestEvent);
-    }
-
-    public class TestCommand : ICommand
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(TestCommand);
-    }
+    public record TestMessage : MessageBase;
 
     [Message(AutoDiscover = false)]
-    public class NonDiscoverableMessage : IEvent
-    {
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
-        public string? CorrelationId { get; } = null;
-        public string? CausationId { get; } = null;
-        public string MessageType { get; } = nameof(NonDiscoverableMessage);
-    }
+    public record NonDiscoverableMessage : MessageBase;
 
-    public class TestEventHandler : IMessageHandler<TestEvent>
+    public class TestMessageHandler : IMessageHandler<TestMessage>
     {
-        public Task HandleAsync(TestEvent message, IMessageContext context, CancellationToken cancellationToken)
+        public Task HandleAsync(TestMessage message, IMessageContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
     [ConsumerQueue(PrefetchCount = 50)]
-    public class HandlerWithConsumerQueue : IMessageHandler<TestEvent>
+    public class HandlerWithConsumerQueue : IMessageHandler<TestMessage>
     {
-        public Task HandleAsync(TestEvent message, IMessageContext context, CancellationToken cancellationToken)
+        public Task HandleAsync(TestMessage message, IMessageContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
@@ -183,9 +134,9 @@ public class TopologyScannerTests
             => Task.CompletedTask;
     }
 
-    public abstract class AbstractHandler : IMessageHandler<TestEvent>
+    public abstract class AbstractHandler : IMessageHandler<TestMessage>
     {
-        public abstract Task HandleAsync(TestEvent message, IMessageContext context, CancellationToken cancellationToken);
+        public abstract Task HandleAsync(TestMessage message, IMessageContext context, CancellationToken cancellationToken);
     }
 
     #endregion

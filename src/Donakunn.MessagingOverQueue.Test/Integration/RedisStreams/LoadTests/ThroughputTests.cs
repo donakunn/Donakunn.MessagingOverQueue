@@ -29,7 +29,7 @@ public class ThroughputTests : LoadTestBase
             options.ConfigureConsumer(batchSize: 100)
                    .WithCountBasedRetention(100000));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher);
 
@@ -80,7 +80,7 @@ public class ThroughputTests : LoadTestBase
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: batchSize));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 50);
 
@@ -114,7 +114,7 @@ public class ThroughputTests : LoadTestBase
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 100));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 50);
 
@@ -170,7 +170,7 @@ public class ThroughputTests : LoadTestBase
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 100));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 50);
 

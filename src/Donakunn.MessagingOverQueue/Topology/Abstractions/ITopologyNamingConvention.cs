@@ -14,7 +14,7 @@ public interface ITopologyNamingConvention
 
     /// <summary>
     /// Gets stream key and consumer group name for a handler (consumer side).
-    /// Stream key uses [ConsumerTopology.Version] over [EventTopology.Version].
+    /// Stream key uses [EventTopology.Version] for versioning.
     /// Consumer group uses [ConsumerTopology.Category/Name] or ServiceName option or namespace.
     /// </summary>
     ConsumerTopologyNames GetConsumerNames(Type handlerType, Type messageType);

@@ -10,7 +10,7 @@ namespace MessagingOverQueue.Test.Integration.Shared.TestDoubles;
 /// <summary>
 /// Simple test event for basic handler tests.
 /// </summary>
-public record SimpleTestEvent : Event
+public record SimpleTestEvent : MessageBase
 {
     public string Value { get; set; } = string.Empty;
 }
@@ -18,7 +18,7 @@ public record SimpleTestEvent : Event
 /// <summary>
 /// Test event with complex payload.
 /// </summary>
-public record ComplexTestEvent : Event
+public record ComplexTestEvent : MessageBase
 {
     public string Name { get; set; } = string.Empty;
     public int Count { get; set; }
@@ -31,7 +31,7 @@ public record ComplexTestEvent : Event
 /// <summary>
 /// Event for testing slow processing.
 /// </summary>
-public record SlowProcessingEvent : Event
+public record SlowProcessingEvent : MessageBase
 {
     public TimeSpan ProcessingTime { get; set; } = TimeSpan.FromMilliseconds(100);
     public string Value { get; set; } = string.Empty;
@@ -40,7 +40,7 @@ public record SlowProcessingEvent : Event
 /// <summary>
 /// Event for testing error handling.
 /// </summary>
-public record FailingEvent : Event
+public record FailingEvent : MessageBase
 {
     public bool ShouldFail { get; set; } = true;
     public string FailureMessage { get; set; } = "Intentional test failure";
@@ -49,7 +49,7 @@ public record FailingEvent : Event
 /// <summary>
 /// Event for concurrency testing.
 /// </summary>
-public record ConcurrencyTestEvent : Event
+public record ConcurrencyTestEvent : MessageBase
 {
     public int Index { get; set; }
     public string ThreadInfo { get; set; } = string.Empty;
@@ -58,7 +58,7 @@ public record ConcurrencyTestEvent : Event
 /// <summary>
 /// Event with custom queue configuration.
 /// </summary>
-public record CustomQueueEvent : Event
+public record CustomQueueEvent : MessageBase
 {
     public string Data { get; set; } = string.Empty;
 }
@@ -66,7 +66,7 @@ public record CustomQueueEvent : Event
 /// <summary>
 /// High priority event.
 /// </summary>
-public record HighPriorityEvent : Event
+public record HighPriorityEvent : MessageBase
 {
     public int Priority { get; set; } = 10;
     public string Message { get; set; } = string.Empty;
@@ -75,7 +75,7 @@ public record HighPriorityEvent : Event
 /// <summary>
 /// Event for testing multiple handlers.
 /// </summary>
-public record MultiHandlerEvent : Event
+public record MultiHandlerEvent : MessageBase
 {
     public string Payload { get; set; } = string.Empty;
 }
@@ -83,7 +83,7 @@ public record MultiHandlerEvent : Event
 /// <summary>
 /// Event for ordering tests.
 /// </summary>
-public record OrderedEvent : Event
+public record OrderedEvent : MessageBase
 {
     public int Sequence { get; set; }
     public DateTime EnqueuedAt { get; set; } = DateTime.UtcNow;
@@ -92,31 +92,9 @@ public record OrderedEvent : Event
 /// <summary>
 /// Event for testing idempotency.
 /// </summary>
-public record IdempotentTestEvent : Event
+public record IdempotentTestEvent : MessageBase
 {
     public string Value { get; set; } = string.Empty;
-}
-
-#endregion
-
-#region Test Commands
-
-/// <summary>
-/// Simple test command.
-/// </summary>
-public record SimpleTestCommand : Command
-{
-    public string Action { get; set; } = string.Empty;
-}
-
-/// <summary>
-/// Command for testing command handling.
-/// </summary>
-public record ProcessOrderCommand : Command
-{
-    public Guid OrderId { get; set; }
-    public string CustomerName { get; set; } = string.Empty;
-    public decimal Total { get; set; }
 }
 
 #endregion
@@ -388,66 +366,6 @@ public class OrderedEventHandler : IMessageHandler<OrderedEvent>
         var testContext = TestExecutionContextAccessor.GetRequired();
         testContext.GetCounter(HandlerKey).Increment();
         testContext.GetCollector<(int Sequence, DateTime ProcessedAt)>(HandlerKey).Add((message.Sequence, DateTime.UtcNow));
-        return Task.CompletedTask;
-    }
-}
-
-/// <summary>
-/// Handler for simple commands.
-/// </summary>
-public class SimpleTestCommandHandler : IMessageHandler<SimpleTestCommand>
-{
-    private const string HandlerKey = nameof(SimpleTestCommandHandler);
-
-    public static int HandleCount => TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Count;
-    public static IReadOnlyCollection<SimpleTestCommand> HandledCommands =>
-        TestExecutionContextAccessor.GetRequired().GetCollector<SimpleTestCommand>(HandlerKey).Messages;
-
-    public static void Reset()
-    {
-        var context = TestExecutionContextAccessor.GetRequired();
-        context.GetCounter(HandlerKey).Reset();
-        context.GetCollector<SimpleTestCommand>(HandlerKey).Clear();
-    }
-
-    public static Task WaitForCountAsync(int expected, TimeSpan timeout)
-        => TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).WaitForCountAsync(expected, timeout);
-
-    public Task HandleAsync(SimpleTestCommand message, IMessageContext context, CancellationToken cancellationToken)
-    {
-        var testContext = TestExecutionContextAccessor.GetRequired();
-        testContext.GetCounter(HandlerKey).Increment();
-        testContext.GetCollector<SimpleTestCommand>(HandlerKey).Add(message);
-        return Task.CompletedTask;
-    }
-}
-
-/// <summary>
-/// Handler for ProcessOrderCommand.
-/// </summary>
-public class ProcessOrderCommandHandler : IMessageHandler<ProcessOrderCommand>
-{
-    private const string HandlerKey = nameof(ProcessOrderCommandHandler);
-
-    public static int HandleCount => TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).Count;
-    public static IReadOnlyCollection<ProcessOrderCommand> ProcessedOrders =>
-        TestExecutionContextAccessor.GetRequired().GetCollector<ProcessOrderCommand>(HandlerKey).Messages;
-
-    public static void Reset()
-    {
-        var context = TestExecutionContextAccessor.GetRequired();
-        context.GetCounter(HandlerKey).Reset();
-        context.GetCollector<ProcessOrderCommand>(HandlerKey).Clear();
-    }
-
-    public static Task WaitForCountAsync(int expected, TimeSpan timeout)
-        => TestExecutionContextAccessor.GetRequired().GetCounter(HandlerKey).WaitForCountAsync(expected, timeout);
-
-    public Task HandleAsync(ProcessOrderCommand message, IMessageContext context, CancellationToken cancellationToken)
-    {
-        var testContext = TestExecutionContextAccessor.GetRequired();
-        testContext.GetCounter(HandlerKey).Increment();
-        testContext.GetCollector<ProcessOrderCommand>(HandlerKey).Add(message);
         return Task.CompletedTask;
     }
 }

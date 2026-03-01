@@ -32,7 +32,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
                 claimIdleTime: TimeSpan.FromMinutes(10),
                 checkInterval: TimeSpan.FromMinutes(10)));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new FailingEvent { ShouldFail = true });
@@ -58,7 +58,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
         using (var consumer1 = await BuildHost<ClaimableEventHandler>(options =>
             options.ConfigureClaiming(TimeSpan.FromSeconds(2)))) // Fast claim for testing
         {
-            var publisher = consumer1.Services.GetRequiredService<IEventPublisher>();
+            var publisher = consumer1.Services.GetRequiredService<IMessagePublisher>();
 
             // Publish message that will be slow to process
             await publisher.PublishAsync(new ClaimableEvent
@@ -99,7 +99,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         var streamKey = $"{StreamPrefix}:testdoubles.simple-test";
         var consumerGroup = "test-service.simple-test";
 
@@ -132,7 +132,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
                 claimIdleTime: TimeSpan.FromMinutes(10),
                 checkInterval: TimeSpan.FromMinutes(10)));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Publish mix of success and failure
         await publisher.PublishAsync(new SelectiveFailureEvent { ShouldFail = false, Value = "Success-1" });
@@ -161,7 +161,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
             options.ConfigureClaiming(TimeSpan.FromSeconds(2))
             .WithDeadLetterPerStream(5));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         var streamKey = $"{StreamPrefix}:testdoubles.failing";
         var consumerGroup = "test-service.failing";
 
@@ -196,7 +196,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
             options.ConfigureClaiming(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1))
             .WithDeadLetterPerStream(3)); // Low threshold for testing
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         var streamKey = $"{StreamPrefix}:redisstreams.dlq-test";
         var dlqStreamKey = $"{streamKey}:dlq";
 
@@ -225,7 +225,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
             options.ConfigureClaiming(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1))
             .WithDeadLetterPerStream(2));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         var streamKey = $"{StreamPrefix}:redisstreams.dlq-test";
         var dlqStreamKey = $"{streamKey}:dlq";
 
@@ -262,7 +262,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
         using var host = await BuildHost<RetryableEventHandler>(options =>
             options.ConfigureClaiming(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1)));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Publish message that fails first time, succeeds on retry
         await publisher.PublishAsync(new RetryableEvent
@@ -327,8 +327,8 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
             .AddRedisStreamsConsumerHostedService();
         });
 
-        var publisher1 = service1.Services.GetRequiredService<IEventPublisher>();
-        var publisher2 = service2.Services.GetRequiredService<IEventPublisher>();
+        var publisher1 = service1.Services.GetRequiredService<IMessagePublisher>();
+        var publisher2 = service2.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Publish failing messages to both services
         await publisher1.PublishAsync(new FailingEvent { ShouldFail = true });
@@ -356,7 +356,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
                 checkInterval: TimeSpan.FromMinutes(10))
             .ConfigureConsumer(batchSize: 5));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         const int messageCount = 20;
 
         // Act - Publish many failing messages
@@ -381,7 +381,7 @@ public class RedisStreamsPendingMessagesTests : RedisStreamsIntegrationTestBase
 /// <summary>
 /// Event for testing message claiming.
 /// </summary>
-public record ClaimableEvent : Event
+public record ClaimableEvent : MessageBase
 {
     public string Value { get; set; } = string.Empty;
     public TimeSpan ProcessingDelay { get; set; }
@@ -415,7 +415,7 @@ public class ClaimableEventHandler : IMessageHandler<ClaimableEvent>
 /// <summary>
 /// Event for selective failure testing.
 /// </summary>
-public record SelectiveFailureEvent : Event
+public record SelectiveFailureEvent : MessageBase
 {
     public bool ShouldFail { get; set; }
     public string Value { get; set; } = string.Empty;
@@ -447,7 +447,7 @@ public class SelectiveFailureEventHandler : IMessageHandler<SelectiveFailureEven
 /// <summary>
 /// Event for DLQ testing.
 /// </summary>
-public record DlqTestEvent : Event
+public record DlqTestEvent : MessageBase
 {
     public bool AlwaysFail { get; set; }
     public string TestValue { get; set; } = string.Empty;
@@ -470,7 +470,7 @@ public class DlqTestEventHandler : IMessageHandler<DlqTestEvent>
 /// <summary>
 /// Event that succeeds after N attempts.
 /// </summary>
-public record RetryableEvent : Event
+public record RetryableEvent : MessageBase
 {
     public string Value { get; set; } = string.Empty;
     public int SucceedAfterAttempts { get; set; }

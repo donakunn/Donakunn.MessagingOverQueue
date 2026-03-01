@@ -58,7 +58,7 @@ public class RecoveryTests : LoadTestBase
         {
             await publisherHost.StartAsync();
 
-            var publisher = publisherHost.Services.GetRequiredService<IEventPublisher>();
+            var publisher = publisherHost.Services.GetRequiredService<IMessagePublisher>();
 
             // Ensure consumer group exists so messages go to pending list
             var db = GetRedisDatabase();
@@ -158,7 +158,7 @@ public class RecoveryTests : LoadTestBase
         using (var host1 = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureClaiming(TimeSpan.FromSeconds(5))))
         {
-            var publisher = host1.Services.GetRequiredService<IEventPublisher>();
+            var publisher = host1.Services.GetRequiredService<IMessagePublisher>();
 
             // Publish all messages
             for (int i = 0; i < messagesToPublish; i++)
@@ -207,7 +207,7 @@ public class RecoveryTests : LoadTestBase
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 50));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 50);
 
@@ -259,7 +259,7 @@ public class RecoveryTests : LoadTestBase
         // Phase 1: Publish and process some messages, then gracefully stop
         using (var host1 = await BuildHost<LoadTestEventHandler>())
         {
-            var publisher = host1.Services.GetRequiredService<IEventPublisher>();
+            var publisher = host1.Services.GetRequiredService<IMessagePublisher>();
 
             for (int i = 0; i < messagesToPublish; i++)
             {

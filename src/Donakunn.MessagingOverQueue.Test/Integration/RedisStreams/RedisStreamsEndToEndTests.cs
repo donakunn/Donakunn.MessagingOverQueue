@@ -25,7 +25,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Hello Redis Streams" });
@@ -43,7 +43,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         const int messageCount = 20;
 
         // Act
@@ -72,7 +72,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         // Arrange
         ComplexTestEventHandler.Reset();
         using var host = await BuildHost<ComplexTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         var originalEvent = new ComplexTestEvent
         {
@@ -107,7 +107,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         const int messageCount = 100;
 
         // Act - Publish in parallel
@@ -127,7 +127,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         var correlationId = Guid.NewGuid().ToString();
         var @event = new SimpleTestEvent { Value = "Correlated" };
@@ -151,7 +151,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         const int concurrentPublishers = 10;
         const int messagesPerPublisher = 20;
         const int totalMessages = concurrentPublishers * messagesPerPublisher;
@@ -182,7 +182,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Test" });
@@ -215,7 +215,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         using var host = await BuildHost<SimpleTestEventHandler>(options =>
             options.WithStreamPrefix(StreamPrefix));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Simple" });
@@ -240,7 +240,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         using var host = await BuildHost<SlowProcessingEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 10));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         const int messageCount = 10;
 
         // Act - Publish slow processing messages
@@ -271,7 +271,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         var beforePublish = DateTime.UtcNow;
 
@@ -309,7 +309,7 @@ public class RedisStreamsEndToEndTests : RedisStreamsIntegrationTestBase
             // Note: NOT adding consumer hosted service - just the publisher
         });
 
-        var publisher = publisherHost.Services.GetRequiredService<IEventPublisher>();
+        var publisher = publisherHost.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Publish before consumer starts
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Pre-consumer" });
