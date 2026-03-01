@@ -71,6 +71,14 @@ public sealed class RedisStreamsConsumerHostedService(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to start consumer for queue '{Queue}'", registration.Options.QueueName);
+
+                // Dispose already-created consumers before propagating
+                foreach (var started in _consumers)
+                {
+                    await started.DisposeAsync();
+                }
+                _consumers.Clear();
+
                 throw;
             }
         }

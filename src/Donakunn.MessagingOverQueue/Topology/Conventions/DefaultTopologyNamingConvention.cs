@@ -8,7 +8,7 @@ namespace Donakunn.MessagingOverQueue.Topology.Conventions;
 /// <summary>
 /// Default Redis-Streams-native naming convention.
 /// Stream key = {category}.{name}[.{version}]
-/// Consumer group = {service}.{name}
+/// Consumer group = {service}.{name}[.{version}]
 /// </summary>
 public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOptions options)
     : ITopologyNamingConvention
@@ -45,7 +45,7 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
         // Stream key: category and name always from event; version from consumer first
         var eventName     = FormatName(eventAttr?.Name ?? GetBaseName(messageType));
         var eventCategory = FormatName(eventAttr?.Category ?? ExtractCategory(messageType));
-        var version       = eventAttr?.Version;
+        var version       = consumerAttr?.Version ?? eventAttr?.Version;
 
         var streamKey = version is null
             ? $"{eventCategory}.{eventName}"
@@ -58,7 +58,11 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
             ?? _options.ServiceName
             ?? GetServiceNameFromHandler(handlerType));
 
-        return new ConsumerTopologyNames(streamKey, $"{serviceName}.{groupName}");
+        var consumerGroupName = version is null
+            ? $"{serviceName}.{groupName}"
+            : $"{serviceName}.{groupName}.{version}";
+
+        return new ConsumerTopologyNames(streamKey, consumerGroupName);
     }
 
     /// <inheritdoc />
@@ -109,7 +113,9 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
 
         foreach (var part in ns.Split('.').Reverse())
         {
-            if (!part.Equals("Messages", StringComparison.OrdinalIgnoreCase))
+            if (!part.Equals("Events",   StringComparison.OrdinalIgnoreCase) &&
+                !part.Equals("Commands", StringComparison.OrdinalIgnoreCase) &&
+                !part.Equals("Messages", StringComparison.OrdinalIgnoreCase))
             {
                 return part.ToLowerInvariant();
             }
@@ -147,5 +153,5 @@ public sealed class TopologyNamingOptions
     /// <summary>
     /// Type name suffixes stripped before name formatting.
     /// </summary>
-    public string[] SuffixesToRemove { get; set; } = ["Message"];
+    public string[] SuffixesToRemove { get; set; } = ["Command", "Event", "Message", "Query"];
 }

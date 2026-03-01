@@ -345,7 +345,7 @@ public class RedisStreamsTopologyTests : RedisStreamsIntegrationTestBase
     {
         // Arrange
         var streamKey = $"{StreamPrefix}:versioning.order-placed.v1";
-        var consumerGroup = "test-service.order-placed";
+        var consumerGroup = "test-service.order-placed.v1";
 
         // Act
         using var host = await BuildHost<VersionedV1Handler>();
@@ -484,7 +484,7 @@ public record UnversionedEvent : MessageBase
 /// <summary>
 /// No [ConsumerTopology] — falls back to event version.
 /// Binds to stream: versioning.order-placed.v1
-/// Consumer group: test-service.order-placed
+/// Consumer group: test-service.order-placed.v1
 /// </summary>
 public class VersionedV1Handler : IMessageHandler<VersionedV1Event>
 {

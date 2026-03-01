@@ -79,6 +79,23 @@ namespace MessagingOverQueue.Test.Unit.Topology
             Assert.StartsWith("orders.", names.StreamKey);
         }
 
+        [Fact]
+        public void GetConsumerNames_ConsumerVersionOverride_UsesConsumerVersionInStreamKey()
+        {
+            // EventWithAllFields has [EventTopology(Version = "v2")]
+            // HandlerWithVersionOverride has [ConsumerTopology(Version = "v1")]
+            var names = _sut.GetConsumerNames(typeof(HandlerWithVersionOverride), typeof(EventWithAllFields));
+            Assert.Equal("orders.order-created.v1", names.StreamKey);
+        }
+
+        [Fact]
+        public void GetConsumerNames_ConsumerVersionNoEventVersion_UsesConsumerVersion()
+        {
+            // PlainEvent has no version, HandlerWithVersionNoEventVersion has [ConsumerTopology(Version = "v3")]
+            var names = _sut.GetConsumerNames(typeof(HandlerWithVersionNoEventVersion), typeof(PlainEvent));
+            Assert.Contains(".v3", names.StreamKey);
+        }
+
         // ── GetConsumerNames — consumer group ─────────────────────────────
 
         [Fact]
@@ -115,12 +132,33 @@ namespace MessagingOverQueue.Test.Unit.Topology
         }
 
         [Fact]
+        public void GetConsumerNames_EventVersion_AppearsInConsumerGroupName()
+        {
+            var names = _sut.GetConsumerNames(typeof(PlainHandler), typeof(EventWithVersion));
+            Assert.EndsWith(".v1", names.ConsumerGroupName);
+        }
+
+        [Fact]
+        public void GetConsumerNames_ConsumerVersionOverride_AppearsInConsumerGroupName()
+        {
+            var names = _sut.GetConsumerNames(typeof(HandlerWithVersionOverride), typeof(EventWithAllFields));
+            Assert.EndsWith(".v1", names.ConsumerGroupName);
+        }
+
+        [Fact]
+        public void GetConsumerNames_NoVersion_NoVersionInConsumerGroupName()
+        {
+            var names = _sut.GetConsumerNames(typeof(PlainHandler), typeof(PlainEvent));
+            Assert.DoesNotContain(".v", names.ConsumerGroupName);
+        }
+
+        [Fact]
         public void GetConsumerNames_AllConsumerFields_FullOverride()
         {
             var sut = new DefaultTopologyNamingConvention(
                 new TopologyNamingOptions { ServiceName = "default-service" });
             var names = sut.GetConsumerNames(typeof(HandlerWithAllConsumerFields), typeof(EventWithAllFields));
-            Assert.Equal("billing.custom-handler", names.ConsumerGroupName);
+            Assert.Equal("billing.custom-handler.v2", names.ConsumerGroupName);
         }
 
         [Fact]
@@ -213,6 +251,18 @@ namespace MessagingOverQueue.Test.Unit.Topology
         private class HandlerWithAllConsumerFields : IMessageHandler<EventWithAllFields>
         {
             public Task HandleAsync(EventWithAllFields m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
+        }
+
+        [ConsumerTopology(Version = "v1")]
+        private class HandlerWithVersionOverride : IMessageHandler<EventWithAllFields>
+        {
+            public Task HandleAsync(EventWithAllFields m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
+        }
+
+        [ConsumerTopology(Version = "v3")]
+        private class HandlerWithVersionNoEventVersion : IMessageHandler<PlainEvent>
+        {
+            public Task HandleAsync(PlainEvent m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
         }
     }
 
