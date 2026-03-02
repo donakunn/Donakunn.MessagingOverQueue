@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using Donakunn.MessagingOverQueue.Abstractions.Consuming;
 using Donakunn.MessagingOverQueue.Abstractions.Messages;
-using Donakunn.MessagingOverQueue.Consuming.Middleware;
 using Donakunn.MessagingOverQueue.Persistence.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -126,6 +125,16 @@ internal sealed class HandlerInvoker<TMessage> : IHandlerInvoker
 /// </summary>
 internal sealed class IdempotencyContext
 {
+    /// <summary>
+    /// Key used to store the <see cref="IInboxRepository"/> in the context data.
+    /// </summary>
+    internal const string InboxRepositoryKey = "IdempotencyMiddleware.InboxRepository";
+
+    /// <summary>
+    /// Key used to store the logger in the context data.
+    /// </summary>
+    internal const string LoggerKey = "IdempotencyMiddleware.Logger";
+
     public required IInboxRepository InboxRepository { get; init; }
     public required ILogger Logger { get; init; }
 
@@ -139,11 +148,11 @@ internal sealed class IdempotencyContext
         if (contextData == null)
             return null;
 
-        if (!contextData.TryGetValue(IdempotencyMiddleware.InboxRepositoryKey, out var repoObj) ||
+        if (!contextData.TryGetValue(InboxRepositoryKey, out var repoObj) ||
             repoObj is not IInboxRepository inboxRepository)
             return null;
 
-        if (!contextData.TryGetValue(IdempotencyMiddleware.LoggerKey, out var loggerObj) ||
+        if (!contextData.TryGetValue(LoggerKey, out var loggerObj) ||
             loggerObj is not ILogger logger)
             return null;
 

@@ -121,10 +121,9 @@ public sealed class RedisStreamsConsumerHostedService(
         IHandlerInvokerRegistry handlerInvokerRegistry,
         IReadOnlySet<Type>? handlerTypeFilter = null)
     {
-        // All consume middlewares (except IdempotencyMiddleware) are registered as Singleton.
+        // All consume middlewares are registered as Singleton.
         // Resolve from root provider directly — no scope needed.
         var middlewares = serviceProvider.GetServices<IConsumeMiddleware>()
-            .Where(m => m is not IdempotencyMiddleware)
             .ToList();
 
         // Build pipeline once — all remaining middlewares are singletons
@@ -160,9 +159,9 @@ public sealed class RedisStreamsConsumerHostedService(
         var inboxRepository = scopedProvider.GetService<IInboxRepository>();
         if (inboxRepository != null)
         {
-            context.Data[IdempotencyMiddleware.InboxRepositoryKey] = inboxRepository;
-            context.Data[IdempotencyMiddleware.LoggerKey] =
-                scopedProvider.GetRequiredService<ILogger<IdempotencyMiddleware>>();
+            context.Data[IdempotencyContext.InboxRepositoryKey] = inboxRepository;
+            context.Data[IdempotencyContext.LoggerKey] =
+                scopedProvider.GetRequiredService<ILogger<IdempotencyContext>>();
         }
 
         await invoker.InvokeAsync(

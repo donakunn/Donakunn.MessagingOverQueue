@@ -109,7 +109,7 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UsePersistence_WithIdempotency_ConfiguresIdempotencyMiddleware()
+    public async Task UsePersistence_WithIdempotency_ConfiguresIdempotencyOptions()
     {
         // Arrange & Act
         using var host = await BuildHostWithPersistence(persistence =>
@@ -118,16 +118,8 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
             persistence.WithIdempotency(opts => opts.RetentionPeriod = TimeSpan.FromDays(14));
         });
 
-        // Assert - Use scope for scoped services
-        using var scope = host.Services.CreateScope();
-        var provider = scope.ServiceProvider;
-
-        // Assert - Verify idempotency middleware is registered
-        var middlewares = provider.GetServices<IConsumeMiddleware>().ToList();
-        Assert.Contains(middlewares, m => m is IdempotencyMiddleware);
-
         // Assert - Verify idempotency options are configured
-        var idempotencyOptions = provider.GetRequiredService<IOptions<IdempotencyOptions>>().Value;
+        var idempotencyOptions = host.Services.GetRequiredService<IOptions<IdempotencyOptions>>().Value;
         Assert.Equal(TimeSpan.FromDays(14), idempotencyOptions.RetentionPeriod);
     }
 
@@ -160,9 +152,9 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
         Assert.NotNull(provider.GetService<IInboxRepository>());
         Assert.NotNull(provider.GetService<IMessageStoreProvider>());
 
-        // Assert - Verify middleware is registered
-        var middlewares = provider.GetServices<IConsumeMiddleware>().ToList();
-        Assert.Contains(middlewares, m => m is IdempotencyMiddleware);
+        // Assert - Verify idempotency options are configured
+        var idempotencyOptions = provider.GetRequiredService<IOptions<IdempotencyOptions>>().Value;
+        Assert.True(idempotencyOptions.Enabled);
     }
 
     [Fact]
@@ -277,10 +269,9 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
         // Assert
         Assert.Equal(1, SimpleTestEventHandler.HandleCount);
 
-        // Verify both services are registered (use scope for scoped services)
+        // Verify resilience middleware is registered
         using var scope = host.Services.CreateScope();
         var middlewares = scope.ServiceProvider.GetServices<IConsumeMiddleware>().ToList();
-        Assert.Contains(middlewares, m => m is IdempotencyMiddleware);
         Assert.Contains(middlewares, m => m is RetryMiddleware);
     }
 
@@ -343,6 +334,10 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
                         .WithTopology(topology => topology
                             .WithServiceName("persistence-test-service")
                             .ScanAssemblyContaining<SimpleTestEventHandler>()))
+                    .UseResilience(persistance =>
+                    {
+                        persistance.WithRetry(opt => opt.MaxRetryAttempts = 5);
+                    })
                     .UsePersistence(persistence =>
                     {
                         configurePersistence(persistence);

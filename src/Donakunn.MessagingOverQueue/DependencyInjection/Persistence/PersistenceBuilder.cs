@@ -1,6 +1,5 @@
 using Donakunn.MessagingOverQueue.Abstractions.Publishing;
 using Donakunn.MessagingOverQueue.Configuration.Options;
-using Donakunn.MessagingOverQueue.Consuming.Middleware;
 using Donakunn.MessagingOverQueue.Persistence;
 using Donakunn.MessagingOverQueue.Persistence.Providers;
 using Donakunn.MessagingOverQueue.Persistence.Repositories;
@@ -71,10 +70,6 @@ internal sealed class PersistenceBuilder : IPersistenceBuilder
         {
             configure?.Invoke(options);
         });
-
-        // Register idempotency middleware (decoupled from outbox)
-        Services.AddScoped<IdempotencyMiddleware>();
-        Services.AddScoped<IConsumeMiddleware>(sp => sp.GetRequiredService<IdempotencyMiddleware>());
 
         return this;
     }
