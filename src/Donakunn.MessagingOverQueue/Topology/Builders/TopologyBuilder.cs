@@ -11,7 +11,7 @@ public sealed class TopologyBuilder
 {
     private readonly List<Assembly> _assembliesToScan = [];
     private TopologyNamingOptions _namingOptions = new();
-    private TopologyProviderOptions _providerOptions = new();
+
     private bool _autoDiscoverEnabled = true;
 
     /// <summary>
@@ -20,15 +20,6 @@ public sealed class TopologyBuilder
     public TopologyBuilder WithServiceName(string serviceName)
     {
         _namingOptions.ServiceName = serviceName;
-        return this;
-    }
-
-    /// <summary>
-    /// Enables or disables dead letter queues by default.
-    /// </summary>
-    public TopologyBuilder WithDeadLetterEnabled(bool enabled = true)
-    {
-        _providerOptions.EnableDeadLetterByDefault = enabled;
         return this;
     }
 
@@ -69,7 +60,6 @@ public sealed class TopologyBuilder
     }
 
     public TopologyNamingOptions NamingOptions => _namingOptions;
-    public TopologyProviderOptions ProviderOptions => _providerOptions;
     public IReadOnlyList<Assembly> AssembliesToScan => _assembliesToScan;
     public bool AutoDiscoverEnabled => _autoDiscoverEnabled;
 }

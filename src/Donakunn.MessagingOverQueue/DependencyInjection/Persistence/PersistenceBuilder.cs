@@ -42,8 +42,8 @@ internal sealed class PersistenceBuilder : IPersistenceBuilder
         Services.TryAddSingleton<IInboxRepository, InboxRepository>();
 
         // Register outbox publisher
-        Services.RemoveAll<IEventPublisher>(); // Remove any existing publisher registrations
-        Services.AddScoped<IEventPublisher, OutboxPublisher>();
+        Services.RemoveAll<IMessagePublisher>(); // Remove any existing publisher registrations
+        Services.AddScoped<IMessagePublisher, OutboxPublisher>();
 
         // Register outbox processor workers
         for (int i = 0; i < options.WorkerCount; i++)

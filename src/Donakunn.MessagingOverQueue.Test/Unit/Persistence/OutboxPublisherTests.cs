@@ -39,7 +39,7 @@ public class OutboxPublisherTests
         await publisher.PublishAsync(new TestMessage());
 
         mockRepository.Verify(
-            r => r.AddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()),
+            r => r.TryAddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 }

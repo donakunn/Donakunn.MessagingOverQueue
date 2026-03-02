@@ -122,7 +122,7 @@ public static class TopologyServiceCollectionExtensions
         {
             var namingConvention = sp.GetRequiredService<ITopologyNamingConvention>();
             var registry = sp.GetRequiredService<ITopologyRegistry>();
-            return new ConventionBasedTopologyProvider(namingConvention, registry, topologyBuilder.ProviderOptions);
+            return new ConventionBasedTopologyProvider(namingConvention, registry);
         });
 
         // Note: ITopologyDeclarer is NOT registered here.
@@ -146,7 +146,7 @@ public static class TopologyServiceCollectionExtensions
     {
         var scanner = new TopologyScanner();
         var namingConvention = new DefaultTopologyNamingConvention(topologyBuilder.NamingOptions);
-        var handlerTopologyBuilder = new HandlerTopologyBuilder(namingConvention, topologyBuilder.ProviderOptions);
+        var handlerTopologyBuilder = new HandlerTopologyBuilder(namingConvention);
 
         var assemblies = topologyBuilder.AssembliesToScan.ToArray();
         var handlerTopologies = scanner.ScanForHandlerTopology(assemblies);
