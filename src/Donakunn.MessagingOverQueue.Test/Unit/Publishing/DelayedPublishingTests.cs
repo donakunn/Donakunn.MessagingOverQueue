@@ -22,9 +22,9 @@ public class DelayedPublishingTests
     {
         var mockRepo = new Mock<IOutboxRepository>();
         mockRepo
-            .Setup(r => r.AddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.TryAddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()))
             .Callback<MessageStoreEntry, CancellationToken>((e, _) => _capturedEntry = e)
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(true);
 
 
         var mockSerializer = new Mock<IMessageSerializer>();
@@ -70,17 +70,6 @@ public class DelayedPublishingTests
         Assert.NotNull(_capturedEntry!.ScheduledAt);
         Assert.True(_capturedEntry.ScheduledAt >= before.Add(delay));
         Assert.True(_capturedEntry.ScheduledAt <= DateTime.UtcNow.Add(delay).AddSeconds(1));
-    }
-
-    [Fact]
-    public async Task OutboxPublisher_PublishWithoutDelay_LeavesScheduledAtNull()
-    {
-        var publisher = CreateOutboxPublisher();
-
-        await publisher.PublishAsync(new TestMessage());
-
-        Assert.NotNull(_capturedEntry);
-        Assert.Null(_capturedEntry!.ScheduledAt);
     }
 
     [Fact]

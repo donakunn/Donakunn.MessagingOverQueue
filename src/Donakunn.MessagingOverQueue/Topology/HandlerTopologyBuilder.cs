@@ -8,13 +8,10 @@ namespace Donakunn.MessagingOverQueue.Topology;
 /// Builds TopologyDefinition and HandlerRegistration from HandlerTopologyInfo.
 /// </summary>
 public sealed class HandlerTopologyBuilder(
-    DefaultTopologyNamingConvention namingConvention,
-    TopologyProviderOptions? options = null)
+    DefaultTopologyNamingConvention namingConvention)
 {
     private readonly DefaultTopologyNamingConvention _namingConvention =
         namingConvention ?? throw new ArgumentNullException(nameof(namingConvention));
-
-    private readonly TopologyProviderOptions _options = options ?? new TopologyProviderOptions();
 
     public HandlerRegistration BuildHandlerRegistration(HandlerTopologyInfo handlerInfo)
     {
@@ -23,10 +20,10 @@ public sealed class HandlerTopologyBuilder(
 
         return new HandlerRegistration
         {
-            HandlerType        = handlerInfo.HandlerType,
-            MessageType        = handlerInfo.MessageType,
-            QueueName          = topology.StreamKey,
-            ConsumerConfig     = handlerInfo.ConsumerQueueConfig,
+            HandlerType = handlerInfo.HandlerType,
+            MessageType = handlerInfo.MessageType,
+            QueueName = topology.StreamKey,
+            ConsumerConfig = handlerInfo.ConsumerQueueConfig,
             TopologyDefinition = topology
         };
     }
@@ -41,11 +38,11 @@ public sealed class HandlerTopologyBuilder(
 
         return new TopologyDefinition
         {
-            MessageType       = handlerInfo.MessageType,
-            StreamKey         = names.StreamKey,
+            MessageType = handlerInfo.MessageType,
+            StreamKey = names.StreamKey,
             ConsumerGroupName = names.ConsumerGroupName,
-            ConsumerConfig    = handlerInfo.ConsumerQueueConfig,
-            DeadLetter        = BuildDeadLetterDefinition(names, handlerInfo.ConsumerQueueConfig)
+            ConsumerConfig = handlerInfo.ConsumerQueueConfig,
+            DeadLetter = BuildDeadLetterDefinition(names, handlerInfo.ConsumerQueueConfig)
         };
     }
 
@@ -54,9 +51,6 @@ public sealed class HandlerTopologyBuilder(
         ConsumerQueueInfo? consumerConfig)
     {
         if (consumerConfig?.QueueType == "stream")
-            return null;
-
-        if (!_options.EnableDeadLetterByDefault)
             return null;
 
         return new DeadLetterDefinition
