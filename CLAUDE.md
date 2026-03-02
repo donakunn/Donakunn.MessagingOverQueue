@@ -22,6 +22,14 @@ dotnet pack ./src/Donakunn.MessagingOverQueue/Donakunn.MessagingOverQueue.csproj
 dotnet pack ./src/Donakunn.MessagingOverQueue.RedisStreams/Donakunn.MessagingOverQueue.RedisStreams.csproj -c Release --output ./artifacts
 ```
 
+## Project Context & Rules
+
+See [docs/CONTEXT.md](docs/CONTEXT.md) for production context and core principles.
+See [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for all coding standards.
+See [docs/HISTORY.md](docs/HISTORY.md) for change history.
+
+**When you implement a feature or fix a bug, add a line to `docs/HISTORY.md` with the date, what changed, and why.**
+
 ## Architecture Overview
 
 This is an async messaging library for .NET 10 with a Redis Streams backend. The key architectural insight is **handler-based topology auto-discovery** - implement `IMessageHandler<T>` and the library creates all messaging infrastructure automatically.
