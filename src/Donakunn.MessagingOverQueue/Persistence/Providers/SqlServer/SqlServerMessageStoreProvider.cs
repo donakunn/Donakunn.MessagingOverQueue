@@ -14,6 +14,8 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
 {
     private readonly MessageStoreOptions _options;
     private readonly ILogger<SqlServerMessageStoreProvider> _logger;
+    // SAFETY: _tableName is set once at construction from trusted configuration (MessageStoreOptions.TableName),
+    // never from user input. The string.Format pattern used with this field is safe in this internal context.
     private readonly string _tableName;
 
     public SqlServerMessageStoreProvider(
@@ -346,7 +348,8 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
         command.Parameters.AddWithValue("@ProcessedAt", DateTime.UtcNow);
         command.Parameters.AddWithValue("@Direction", (int)MessageDirection.Outbox);
 
-        var idsParam = command.Parameters.AddWithValue("@Ids", CreateGuidTable(idList));
+        using var idsTable = CreateGuidTable(idList);
+        var idsParam = command.Parameters.AddWithValue("@Ids", idsTable);
         idsParam.SqlDbType = SqlDbType.Structured;
         idsParam.TypeName = "dbo.GuidList";
 
@@ -545,8 +548,16 @@ public sealed class SqlServerMessageStoreProvider : IMessageStoreProvider
     public async Task<ITransactionContext> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
         var connection = await CreateConnectionAsync(cancellationToken);
-        var transaction = connection.BeginTransaction();
-        return new SqlServerTransactionContext(connection, transaction);
+        try
+        {
+            var transaction = connection.BeginTransaction();
+            return new SqlServerTransactionContext(connection, transaction);
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
     }
 
     private async Task<SqlConnection> CreateConnectionAsync(CancellationToken cancellationToken)

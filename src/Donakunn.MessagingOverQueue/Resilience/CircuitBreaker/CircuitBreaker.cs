@@ -1,3 +1,4 @@
+using Donakunn.MessagingOverQueue.Diagnostics;
 using Polly;
 using Polly.CircuitBreaker;
 
@@ -11,8 +12,7 @@ public sealed class PollyCircuitBreaker : ICircuitBreaker, IDisposable
     private readonly ResiliencePipeline _pipeline;
     private readonly Lock _stateLock = new();
     private volatile CircuitState _currentState = CircuitState.Closed;
-    private readonly SemaphoreSlim _disposeSemaphore = new(1, 1);
-    private bool _disposed;
+    private int _disposedFlag;
 
     public event EventHandler<CircuitStateChangedEventArgs>? StateChanged;
 
@@ -96,32 +96,18 @@ public sealed class PollyCircuitBreaker : ICircuitBreaker, IDisposable
         }
 
         // Raise event outside the lock to prevent deadlocks
+        MessagingMetrics.CircuitBreakerStateTransitions.Add(1);
         StateChanged?.Invoke(this, eventArgs);
     }
 
     private void ThrowIfDisposed()
     {
-        ObjectDisposedException.ThrowIf(_disposed, nameof(PollyCircuitBreaker));
+        ObjectDisposedException.ThrowIf(_disposedFlag != 0, nameof(PollyCircuitBreaker));
     }
 
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.CompareExchange(ref _disposedFlag, 1, 0) != 0)
             return;
-
-        _disposeSemaphore.Wait();
-        try
-        {
-            if (_disposed)
-                return;
-
-            _disposed = true;
-            _disposeSemaphore.Dispose();
-        }
-        finally
-        {
-            if (!_disposed)
-                _disposeSemaphore.Release();
-        }
     }
 }

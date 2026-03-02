@@ -74,6 +74,11 @@ internal sealed class HandlerInvoker<TMessage> : IHandlerInvoker
 
             if (idempotencyContext != null)
             {
+                // DESIGN NOTE: This check-then-act has an inherent race window in distributed scenarios.
+                // Two concurrent instances could both pass HasBeenProcessedAsync before either calls MarkAsProcessedAsync.
+                // This is acceptable because: (1) the inbox is a best-effort optimization, not a guarantee,
+                // and (2) handlers MUST be idempotent by design per the library's contract.
+
                 // Check if already processed (read-only check).
                 // We check BEFORE invoking to skip duplicates, but we only mark as processed
                 // AFTER success to allow retries on failure.

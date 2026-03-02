@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Donakunn.MessagingOverQueue.DependencyInjection.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -7,14 +7,13 @@ namespace Donakunn.MessagingOverQueue.Consuming.Middleware;
 
 /// <summary>
 /// Middleware that enforces a maximum processing time for messages.
-/// If processing exceeds the timeout, the operation is cancelled.
-/// Pools CancellationTokenSource instances to reduce GC pressure on the hot path.
+/// Pools CancellationTokenSource instances in a bounded channel to reduce GC pressure.
 /// </summary>
 public class TimeoutMiddleware : IOrderedConsumeMiddleware
 {
     private readonly TimeoutOptions _options;
     private readonly ILogger<TimeoutMiddleware> _logger;
-    private readonly ConcurrentBag<CancellationTokenSource> _ctsPool = new();
+    private readonly Channel<CancellationTokenSource> _ctsPool;
     private const int MaxPoolSize = 64;
 
     /// <summary>
@@ -28,6 +27,13 @@ public class TimeoutMiddleware : IOrderedConsumeMiddleware
     {
         _options = options.Value;
         _logger = logger;
+        _ctsPool = Channel.CreateBounded<CancellationTokenSource>(
+            new BoundedChannelOptions(MaxPoolSize)
+            {
+                FullMode = BoundedChannelFullMode.DropWrite,
+                SingleReader = false,
+                SingleWriter = false
+            });
     }
 
     /// <inheritdoc />
@@ -74,16 +80,16 @@ public class TimeoutMiddleware : IOrderedConsumeMiddleware
 
     private CancellationTokenSource RentCts()
     {
-        return _ctsPool.TryTake(out var cts) ? cts : new CancellationTokenSource();
+        return _ctsPool.Reader.TryRead(out var cts) ? cts : new CancellationTokenSource();
     }
 
     private void ReturnCts(CancellationTokenSource cts)
     {
-        if (cts.TryReset() && _ctsPool.Count < MaxPoolSize)
+        if (cts.TryReset() && !_ctsPool.Writer.TryWrite(cts))
         {
-            _ctsPool.Add(cts);
+            cts.Dispose();
         }
-        else
+        else if (!cts.TryReset())
         {
             cts.Dispose();
         }

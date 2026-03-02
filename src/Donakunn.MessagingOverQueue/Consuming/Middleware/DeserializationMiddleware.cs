@@ -14,6 +14,7 @@ public class DeserializationMiddleware : IOrderedConsumeMiddleware
     private readonly IMessageTypeResolver _typeResolver;
     private readonly ILogger<DeserializationMiddleware> _logger;
     private readonly ConcurrentDictionary<string, Type?> _resolvedTypeCache = new();
+    private const int MaxTypeCacheSize = 1024;
 
     public DeserializationMiddleware(
         IMessageSerializer serializer,
@@ -53,9 +54,19 @@ public class DeserializationMiddleware : IOrderedConsumeMiddleware
                 return;
             }
 
-            var messageType = _resolvedTypeCache.GetOrAdd(
-                messageTypeName,
-                typeName => _typeResolver.ResolveType(typeName));
+            Type? messageType;
+            if (_resolvedTypeCache.TryGetValue(messageTypeName, out messageType))
+            {
+                // Cache hit
+            }
+            else
+            {
+                messageType = _typeResolver.ResolveType(messageTypeName);
+                if (_resolvedTypeCache.Count < MaxTypeCacheSize)
+                {
+                    _resolvedTypeCache.TryAdd(messageTypeName, messageType);
+                }
+            }
 
             if (messageType == null)
             {

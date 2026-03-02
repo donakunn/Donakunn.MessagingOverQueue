@@ -52,7 +52,9 @@ public sealed class RedisStreamsPublisher : IInternalPublisher
 
             if (_options.RetentionStrategy == StreamRetentionStrategy.TimeBased)
             {
-                _ = TrimByTimeAsync(db, streamKey);
+                _ = TrimByTimeAsync(db, streamKey).ContinueWith(
+                    t => _logger.LogWarning(t.Exception?.InnerException, "Unhandled error in stream trim for '{StreamKey}'", streamKey),
+                    TaskContinuationOptions.OnlyOnFaulted);
             }
         }
         catch (RedisException ex)
@@ -138,7 +140,9 @@ public sealed class RedisStreamsPublisher : IInternalPublisher
         // Apply time-based trimming for affected streams (async, fire-and-forget)
         foreach (var streamKey in streamsToTrim)
         {
-            _ = TrimByTimeAsync(db, streamKey);
+            _ = TrimByTimeAsync(db, streamKey).ContinueWith(
+                t => _logger.LogWarning(t.Exception?.InnerException, "Unhandled error in stream trim for '{StreamKey}'", streamKey),
+                TaskContinuationOptions.OnlyOnFaulted);
         }
 
         return results;
