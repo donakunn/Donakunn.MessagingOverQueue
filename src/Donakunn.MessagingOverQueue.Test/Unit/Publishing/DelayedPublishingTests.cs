@@ -26,6 +26,7 @@ public class DelayedPublishingTests
             .Callback<MessageStoreEntry, CancellationToken>((e, _) => _capturedEntry = e)
             .Returns(Task.CompletedTask);
 
+
         var mockSerializer = new Mock<IMessageSerializer>();
         mockSerializer
             .Setup(s => s.Serialize(It.IsAny<IMessage>()))

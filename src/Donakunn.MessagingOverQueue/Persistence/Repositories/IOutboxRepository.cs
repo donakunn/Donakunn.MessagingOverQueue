@@ -26,6 +26,14 @@ public interface IOutboxRepository
     Task AddAsync(MessageStoreEntry entry, ITransactionContext transactionContext, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Attempts to add a message to the outbox.
+    /// Returns false if a message with the same ID already exists (idempotent publish).
+    /// </summary>
+    /// <param name="entry">The outbox entry to add.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<bool> TryAddAsync(MessageStoreEntry entry, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Acquires a lock on messages for processing.
     /// Returns messages that are pending or have expired locks.
     /// </summary>

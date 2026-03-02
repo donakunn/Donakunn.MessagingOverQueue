@@ -122,12 +122,12 @@ public sealed class MessageStoreEntry
             RoutingKey = routingKey,
             QueueName = queueName,
             Headers = headers,
-            HandlerType = string.Empty, // Required for NOT NULL constraint
+            HandlerType = string.Empty,
             CorrelationId = correlationId,
             CreatedAt = DateTime.UtcNow,
             Status = MessageStatus.Pending,
             RetryCount = 0,
-            ScheduledAt = scheduledAt
+            ScheduledAt = scheduledAt ?? DateTime.UtcNow,
         };
     }
 

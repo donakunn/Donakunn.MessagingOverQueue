@@ -28,6 +28,12 @@ public sealed class OutboxRepository : IOutboxRepository
         return _provider.AddAsync(entry, transactionContext, cancellationToken);
     }
 
+    public Task<bool> TryAddAsync(MessageStoreEntry entry, CancellationToken cancellationToken = default)
+    {
+        ValidateOutboxEntry(entry);
+        return _provider.TryAddAsync(entry, cancellationToken);
+    }
+
     public Task<IReadOnlyList<MessageStoreEntry>> AcquireLockAsync(int batchSize, TimeSpan lockDuration, CancellationToken cancellationToken = default)
     {
         return _provider.AcquireOutboxLockAsync(batchSize, lockDuration, cancellationToken);

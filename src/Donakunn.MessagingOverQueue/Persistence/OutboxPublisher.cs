@@ -59,7 +59,11 @@ public sealed class OutboxPublisher : IMessagePublisher
             options.Headers != null ? JsonSerializer.Serialize(options.Headers, Abstractions.Serialization.InternalJsonContext.Default.DictionaryStringString) : null,
             message.CorrelationId);
 
-        await _repository.AddAsync(entry, cancellationToken);
+        if (!await _repository.TryAddAsync(entry, cancellationToken))
+        {
+            _logger.LogDebug("Skipped duplicate message {MessageId} already present in outbox", message.Id);
+            return;
+        }
 
         _logger.LogDebug("Added message {MessageId} to outbox for exchange '{Exchange}' with routing key '{RoutingKey}' and queue '{QueueName}'",
             message.Id, exchangeName, routingKey, queueName);
@@ -85,7 +89,11 @@ public sealed class OutboxPublisher : IMessagePublisher
             correlationId: message.CorrelationId,
             scheduledAt: scheduledAt);
 
-        await _repository.AddAsync(entry, cancellationToken);
+        if (!await _repository.TryAddAsync(entry, cancellationToken))
+        {
+            _logger.LogDebug("Skipped duplicate message {MessageId} already present in outbox", message.Id);
+            return;
+        }
 
         _logger.LogDebug(
             "Scheduled message {MessageId} for delivery at {ScheduledAt} (delay: {Delay})",
