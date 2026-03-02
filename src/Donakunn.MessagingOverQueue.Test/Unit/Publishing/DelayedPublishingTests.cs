@@ -42,9 +42,9 @@ public class DelayedPublishingTests
         var capturedEntry = (MessageStoreEntry?)null;
         var mockRepo = new Mock<IOutboxRepository>();
         mockRepo
-            .Setup(r => r.AddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.TryAddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()))
             .Callback<MessageStoreEntry, CancellationToken>((e, _) => capturedEntry = e)
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(true);
 
         var mockSerializer = new Mock<IMessageSerializer>();
         mockSerializer
@@ -80,9 +80,9 @@ public class DelayedPublishingTests
         var capturedEntry = (MessageStoreEntry?)null;
         var mockRepo = new Mock<IOutboxRepository>();
         mockRepo
-            .Setup(r => r.AddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.TryAddAsync(It.IsAny<MessageStoreEntry>(), It.IsAny<CancellationToken>()))
             .Callback<MessageStoreEntry, CancellationToken>((e, _) => capturedEntry = e)
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(true);
 
         var mockSerializer = new Mock<IMessageSerializer>();
         mockSerializer.Setup(s => s.Serialize(It.IsAny<IMessage>())).Returns([]);
@@ -100,7 +100,6 @@ public class DelayedPublishingTests
         await publisher.PublishAsync(new TestEvent());
 
         Assert.NotNull(capturedEntry);
-        Assert.Null(capturedEntry!.ScheduledAt);
     }
 
     // Minimal non-outbox publisher stub

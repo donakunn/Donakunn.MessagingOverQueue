@@ -4,11 +4,9 @@ using Donakunn.MessagingOverQueue.Consuming.Middleware;
 using Donakunn.MessagingOverQueue.DependencyInjection;
 using Donakunn.MessagingOverQueue.DependencyInjection.Persistence;
 using Donakunn.MessagingOverQueue.DependencyInjection.Resilience;
-using Donakunn.MessagingOverQueue.Persistence;
 using Donakunn.MessagingOverQueue.Persistence.Entities;
 using Donakunn.MessagingOverQueue.Persistence.Providers;
 using Donakunn.MessagingOverQueue.Persistence.Repositories;
-using Donakunn.MessagingOverQueue.RedisStreams.Configuration;
 using Donakunn.MessagingOverQueue.RedisStreams.DependencyInjection.Queues;
 using MessagingOverQueue.Test.Integration.Shared.Infrastructure;
 using MessagingOverQueue.Test.Integration.Shared.TestDoubles;
@@ -179,8 +177,8 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
         // Act - use scoped services
         using (var scope = host.Services.CreateScope())
         {
-            var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            await ((IEventPublisher)outboxPublisher).PublishAsync(testEvent);
+            var outboxPublisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
+            await outboxPublisher.PublishAsync(testEvent);
         }
 
         // Assert - verify message was stored
@@ -304,8 +302,8 @@ public class RedisStreamsPersistenceTests : IAsyncLifetime
         // Act — publish with delay (OutboxPublisher is scoped, resolve via scope)
         using (var scope = host.Services.CreateScope())
         {
-            var outboxPublisher = scope.ServiceProvider.GetRequiredService<OutboxPublisher>();
-            await ((IEventPublisher)outboxPublisher).PublishAsync(new SimpleTestEvent { Value = "delayed" }, shortDelay);
+            var outboxPublisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
+            await outboxPublisher.PublishAsync(new SimpleTestEvent { Value = "delayed" }, shortDelay);
         }
 
         // Assert — not received immediately

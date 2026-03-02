@@ -1,3 +1,4 @@
+using Donakunn.MessagingOverQueue.Abstractions.Publishing;
 using Donakunn.MessagingOverQueue.Configuration.Options;
 using Donakunn.MessagingOverQueue.Consuming.Middleware;
 using Donakunn.MessagingOverQueue.Persistence;
@@ -40,8 +41,9 @@ internal sealed class PersistenceBuilder : IPersistenceBuilder
         Services.TryAddSingleton<IOutboxRepository, OutboxRepository>();
         Services.TryAddSingleton<IInboxRepository, InboxRepository>();
 
-        // Register outbox publisher for transactional scenarios
-        Services.AddScoped<OutboxPublisher>();
+        // Register outbox publisher
+        Services.RemoveAll<IEventPublisher>(); // Remove any existing publisher registrations
+        Services.AddScoped<IEventPublisher, OutboxPublisher>();
 
         // Register outbox processor workers
         for (int i = 0; i < options.WorkerCount; i++)
