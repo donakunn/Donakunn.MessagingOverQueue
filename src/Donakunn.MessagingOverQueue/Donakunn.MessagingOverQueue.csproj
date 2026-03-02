@@ -23,7 +23,7 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Donakunn.MessagingOverQueue.RedisStreams" />
-        <InternalsVisibleTo Include="Donakunn.MessagingOverQueue.Test" />
+        <InternalsVisibleTo Include="MessagingOverQueue.Test" />
     </ItemGroup>
 
     <ItemGroup>

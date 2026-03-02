@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Donakunn.MessagingOverQueue.Diagnostics;
 
 namespace Donakunn.MessagingOverQueue.RedisStreams;
 
@@ -55,6 +56,9 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
     /// Should be longer than the claiming check interval to ensure stale entries are caught.
     /// </summary>
     private static readonly TimeSpan RecentlyAckedRetention = TimeSpan.FromSeconds(60);
+    private const int MaxRecentlyAckedCacheSize = 10_000;
+    private const int MaxInFlightEntryAgeSeconds = 300; // 5 minutes safety net
+    private const int MaxDeliveryCountCacheSize = 10_000;
 
     /// <summary>
     /// Tracks active processing tasks for graceful shutdown.
@@ -154,13 +158,13 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
         }
 
         // Wait for active message processing tasks to complete (graceful drain)
-        var activeTasks = _activeTasks.Values.Where(t => !t.IsCompleted).ToArray();
-        if (activeTasks.Length > 0)
+        var remainingTasks = _activeTasks.Values.ToArray();
+        if (remainingTasks.Length > 0)
         {
-            _logger.LogDebug("Waiting for {Count} active processing tasks to complete", activeTasks.Length);
+            _logger.LogDebug("Waiting for {Count} active processing tasks to complete", remainingTasks.Length);
             try
             {
-                await Task.WhenAll(activeTasks).WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+                await Task.WhenAll(remainingTasks).WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -168,7 +172,8 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
             }
             catch (TimeoutException)
             {
-                _logger.LogWarning("Timeout waiting for {Count} active processing tasks", activeTasks.Length);
+                var incompleteCount = remainingTasks.Count(t => !t.IsCompleted);
+                _logger.LogWarning("Timeout waiting for {Count} active processing tasks", incompleteCount);
             }
         }
 
@@ -277,6 +282,14 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
 
                 // Clean up old entries from the recently acked cache
                 CleanupRecentlyAckedCache();
+                CleanupStaleInFlightEntries();
+
+                // Cap delivery count cache size
+                if (_deliveryCountCache.Count > MaxDeliveryCountCacheSize)
+                {
+                    _deliveryCountCache.Clear();
+                    _logger.LogDebug("Cleared delivery count cache (exceeded {MaxSize} entries)", MaxDeliveryCountCacheSize);
+                }
 
                 // Re-read our own pending messages for retry
                 await RetryOwnPendingMessagesAsync(db, handler, cancellationToken).ConfigureAwait(false);
@@ -465,6 +478,7 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
         CancellationToken cancellationToken,
         bool isFromPendingRead = false)
     {
+        MessagingMetrics.ActiveTasks.Add(1);
         try
         {
             await ProcessEntryAsync(db, entry, entryIdStr, handler, cancellationToken, isFromPendingRead).ConfigureAwait(false);
@@ -478,9 +492,11 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
             // Log unexpected exceptions to prevent them from being unobserved.
             // The message will be retried via the pending mechanism.
             _logger.LogError(ex, "Unexpected error processing entry {EntryId}", entryIdStr);
+            MessagingMetrics.MessagesFailed.Add(1);
         }
         finally
         {
+            MessagingMetrics.ActiveTasks.Add(-1);
             // Always remove from in-flight tracking, delivery count cache, and release semaphore
             _inFlightEntries.TryRemove(entryIdStr, out _);
             _deliveryCountCache.TryRemove(entryIdStr, out _);
@@ -528,7 +544,7 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
                     messageId, deliveryCount);
 
                 await MoveToDeadLetterAsync(db, entry, "Max delivery attempts exceeded").ConfigureAwait(false);
-                await AcknowledgeEntryAsync(db, entryId, messageId).ConfigureAwait(false);
+                await AcknowledgeEntryAsync(db, entryId, entryIdStr, messageId).ConfigureAwait(false);
                 return;
             }
 
@@ -537,7 +553,7 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
             await handler(context, cancellationToken).ConfigureAwait(false);
 
             // Handle acknowledgment based on context flags
-            await HandleAcknowledgmentAsync(db, entry, context, messageId).ConfigureAwait(false);
+            await HandleAcknowledgmentAsync(db, entry, entryIdStr, context, messageId).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -591,12 +607,13 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
     private async Task HandleAcknowledgmentAsync(
         IDatabase db,
         StreamEntry entry,
+        string entryIdStr,
         ConsumeContext context,
         string? messageId)
     {
         if (context.ShouldAck && !context.ShouldReject)
         {
-            await AcknowledgeEntryAsync(db, entry.Id, messageId).ConfigureAwait(false);
+            await AcknowledgeEntryAsync(db, entry.Id, entryIdStr, messageId).ConfigureAwait(false);
         }
         else if (context.ShouldReject)
         {
@@ -604,19 +621,25 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
             {
                 await MoveToDeadLetterAsync(db, entry, "Message rejected by handler").ConfigureAwait(false);
             }
-            await AcknowledgeEntryAsync(db, entry.Id, messageId).ConfigureAwait(false);
+            await AcknowledgeEntryAsync(db, entry.Id, entryIdStr, messageId).ConfigureAwait(false);
         }
     }
 
-    private async Task AcknowledgeEntryAsync(IDatabase db, RedisValue entryId, string? messageId)
+    private async Task AcknowledgeEntryAsync(IDatabase db, RedisValue entryId, string entryIdStr, string? messageId)
     {
         await db.StreamAcknowledgeAsync(_streamKey, _consumerGroup, entryId).ConfigureAwait(false);
+        MessagingMetrics.MessagesConsumed.Add(1);
 
         // Track this entry as recently acked to prevent race conditions with the claiming loop.
         // The claiming loop might receive stale pending list data that includes entries
         // that were acked between the fetch and the processing attempt.
-        var entryIdStr = entryId.ToString();
         _recentlyAcked[entryIdStr] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        // Trigger cleanup if cache exceeds size limit
+        if (_recentlyAcked.Count > MaxRecentlyAckedCacheSize)
+        {
+            CleanupRecentlyAckedCache();
+        }
 
         _logger.LogDebug("Acknowledged message {MessageId}", messageId);
     }
@@ -640,6 +663,29 @@ public sealed class RedisStreamsConsumer : IInternalConsumer
         if (keysToRemove.Count > 0)
         {
             _logger.LogDebug("Cleaned up {Count} entries from recently acked cache", keysToRemove.Count);
+        }
+    }
+
+    /// <summary>
+    /// Removes stale entries from the in-flight tracking dictionary.
+    /// Acts as a safety net for entries that leaked due to unhandled exceptions.
+    /// </summary>
+    private void CleanupStaleInFlightEntries()
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddSeconds(-MaxInFlightEntryAgeSeconds).ToUnixTimeMilliseconds();
+        var keysToRemove = _inFlightEntries
+            .Where(kvp => kvp.Value < cutoff)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var key in keysToRemove)
+        {
+            _inFlightEntries.TryRemove(key, out _);
+        }
+
+        if (keysToRemove.Count > 0)
+        {
+            _logger.LogWarning("Cleaned up {Count} stale in-flight entries (safety net)", keysToRemove.Count);
         }
     }
 

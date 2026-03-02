@@ -40,7 +40,7 @@ public class PersistenceUnderLoadTests : LoadTestBase
             outboxProcessingInterval: TimeSpan.FromMilliseconds(100));
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing outbox throughput with batch size {batchSize}");
 
@@ -101,7 +101,7 @@ public class PersistenceUnderLoadTests : LoadTestBase
                     Sequence = i,
                     PublishedAtTicks = Stopwatch.GetTimestamp()
                 };
-                await ((IEventPublisher)outboxPublisher).PublishAsync(message);
+                await ((IMessagePublisher)outboxPublisher).PublishAsync(message);
             }
         }
 
@@ -170,7 +170,7 @@ public class PersistenceUnderLoadTests : LoadTestBase
         var features = CreateFeatures(idempotency: true);
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing idempotency duplicate prevention");
 
@@ -220,7 +220,7 @@ public class PersistenceUnderLoadTests : LoadTestBase
         var features = CreateFeatures(idempotency: true);
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing idempotency at scale");
 
@@ -264,7 +264,7 @@ public class PersistenceUnderLoadTests : LoadTestBase
             idempotency: true);
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing exactly-once semantics with outbox + idempotency");
 
@@ -303,7 +303,7 @@ public class PersistenceUnderLoadTests : LoadTestBase
             idempotency: true);
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing SQL Server connection pool under load");
 

@@ -21,8 +21,11 @@ public sealed class ConsumerTopologyAttribute : Attribute
     public string? Name { get; init; }
 
     /// <summary>
-    /// Version suffix for the queue. Overrides EventTopology.Version when set.
-    /// No version suffix when null (falls back to EventTopology.Version).
+    /// Version suffix for the stream key this consumer subscribes to.
+    /// Overrides EventTopology.Version when set.
+    /// Falls back to EventTopology.Version when null.
+    /// Enables gradual migration: consumers can stay on v1 while publishers move to v2.
     /// </summary>
     public string? Version { get; init; }
+
 }

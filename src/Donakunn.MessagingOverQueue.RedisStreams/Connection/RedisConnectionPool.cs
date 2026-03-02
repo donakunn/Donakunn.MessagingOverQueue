@@ -15,6 +15,7 @@ public sealed class RedisConnectionPool : IRedisConnectionPool
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
     private IConnectionMultiplexer? _connection;
+    private int _eventHandlersRegistered;
     private bool _disposed;
 
     public RedisConnectionPool(
@@ -82,13 +83,29 @@ public sealed class RedisConnectionPool : IRedisConnectionPool
 
         try
         {
+            // Clean up old connection if reconnecting
+            if (_connection != null)
+            {
+                _connection.ConnectionFailed -= OnConnectionFailed;
+                _connection.ConnectionRestored -= OnConnectionRestored;
+                _connection.ErrorMessage -= OnErrorMessage;
+                _connection.InternalError -= OnInternalError;
+                Interlocked.Exchange(ref _eventHandlersRegistered, 0);
+
+                try { _connection.Dispose(); }
+                catch { /* best-effort cleanup */ }
+            }
+
             _connection = await ConnectionMultiplexer.ConnectAsync(configOptions);
 
-            // Register event handlers
-            _connection.ConnectionFailed += OnConnectionFailed;
-            _connection.ConnectionRestored += OnConnectionRestored;
-            _connection.ErrorMessage += OnErrorMessage;
-            _connection.InternalError += OnInternalError;
+            // Register event handlers exactly once per connection
+            if (Interlocked.CompareExchange(ref _eventHandlersRegistered, 1, 0) == 0)
+            {
+                _connection.ConnectionFailed += OnConnectionFailed;
+                _connection.ConnectionRestored += OnConnectionRestored;
+                _connection.ErrorMessage += OnErrorMessage;
+                _connection.InternalError += OnInternalError;
+            }
 
             _logger.LogInformation(
                 "Successfully connected to Redis. Server version: {Version}",

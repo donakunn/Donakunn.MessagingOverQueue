@@ -32,7 +32,7 @@ public class StressTests : LoadTestBase
     //         options.ConfigureConsumer(batchSize: 10)
     //                .WithCountBasedRetention(1000000)); // Large retention for stress test
     //
-    //     var publisher = host.Services.GetRequiredService<IEventPublisher>();
+    //     var publisher = host.Services.GetRequiredService<IMessagePublisher>();
     //
     //     // Warmup with slow handler
     //     Reporter.WriteLine("Warming up slow handler...");
@@ -107,7 +107,7 @@ public class StressTests : LoadTestBase
         using var host = await BuildHost<SlowLoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 5));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Rapid burst publish
         const int burstSize = 5000;
@@ -159,7 +159,7 @@ public class StressTests : LoadTestBase
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 50));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 100);
 
@@ -250,7 +250,7 @@ public class StressTests : LoadTestBase
             options.ConfigureConsumer(batchSize: 100)
                    .WithCountBasedRetention(500000));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 100);
 

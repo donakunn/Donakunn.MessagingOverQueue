@@ -14,8 +14,6 @@ namespace Donakunn.MessagingOverQueue.Topology;
 public sealed class TopologyScanner : ITopologyScanner
 {
     private static readonly Type MessageInterface = typeof(IMessage);
-    private static readonly Type CommandInterface = typeof(ICommand);
-    private static readonly Type EventInterface = typeof(IEvent);
     private static readonly Type HandlerOpenGenericType = typeof(IMessageHandler<>);
 
     /// <inheritdoc />
@@ -80,8 +78,6 @@ public sealed class TopologyScanner : ITopologyScanner
                 messageTypes.Add(new MessageTypeInfo
                 {
                     MessageType = type,
-                    IsCommand = CommandInterface.IsAssignableFrom(type),
-                    IsEvent = EventInterface.IsAssignableFrom(type),
                     Attributes = attributes.AsReadOnly()
                 });
             }
@@ -198,9 +194,7 @@ public sealed class TopologyScanner : ITopologyScanner
             MessageType = messageType,
             HandlerAttributes = handlerAttributes.AsReadOnly(),
             MessageAttributes = messageAttributes.AsReadOnly(),
-            ConsumerQueueConfig = consumerQueueConfig,
-            IsCommand = CommandInterface.IsAssignableFrom(messageType),
-            IsEvent = EventInterface.IsAssignableFrom(messageType)
+            ConsumerQueueConfig = consumerQueueConfig
         };
     }
 
@@ -211,12 +205,6 @@ public sealed class TopologyScanner : ITopologyScanner
 
         return new ConsumerQueueInfo
         {
-            Durable = attr.Durable,
-            Exclusive = attr.Exclusive,
-            AutoDelete = attr.AutoDelete,
-            MessageTtlMs = attr.MessageTtlMs > 0 ? attr.MessageTtlMs : null,
-            MaxLength = attr.MaxLength > 0 ? attr.MaxLength : null,
-            MaxLengthBytes = attr.MaxLengthBytes > 0 ? attr.MaxLengthBytes : null,
             QueueType = ConvertQueueType(attr.QueueType),
             PrefetchCount = attr.PrefetchCount,
             MaxConcurrency = attr.MaxConcurrency
@@ -247,8 +235,6 @@ public sealed class TopologyScanner : ITopologyScanner
             messageTypes.Add(new MessageTypeInfo
             {
                 MessageType = type,
-                IsCommand = CommandInterface.IsAssignableFrom(type),
-                IsEvent = EventInterface.IsAssignableFrom(type),
                 Attributes = attributes.AsReadOnly()
             });
         }

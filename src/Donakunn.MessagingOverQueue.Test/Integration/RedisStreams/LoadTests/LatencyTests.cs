@@ -34,7 +34,7 @@ public class LatencyTests : LoadTestBase
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 50));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 100);
 
@@ -82,7 +82,7 @@ public class LatencyTests : LoadTestBase
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 50));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 100);
 
@@ -129,7 +129,7 @@ public class LatencyTests : LoadTestBase
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 20));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 50);
 
@@ -183,7 +183,7 @@ public class LatencyTests : LoadTestBase
         using var host = await BuildHost<LoadTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 50));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         await WarmupAsync<LoadTestEventHandler>(publisher, 100);
 

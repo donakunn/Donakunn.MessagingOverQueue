@@ -117,6 +117,19 @@ public sealed class LoadTestReporter
     }
 
     /// <summary>
+    /// Reports resource metrics (GC collections, memory delta) from a load test run.
+    /// </summary>
+    public void ReportResourceMetrics(ResourceMetrics metrics)
+    {
+        _output.WriteLine("=== Resource Metrics ===");
+        _output.WriteLine($"  GC Gen0: {metrics.Gen0Collections} collections");
+        _output.WriteLine($"  GC Gen1: {metrics.Gen1Collections} collections");
+        _output.WriteLine($"  GC Gen2: {metrics.Gen2Collections} collections");
+        _output.WriteLine($"  Memory delta: {metrics.MemoryDeltaBytes / 1024.0:F1} KB");
+        _output.WriteLine("");
+    }
+
+    /// <summary>
     /// Reports a comparison between expected and actual values.
     /// </summary>
     public void ReportComparison(string metric, double expected, double actual, string unit = "")

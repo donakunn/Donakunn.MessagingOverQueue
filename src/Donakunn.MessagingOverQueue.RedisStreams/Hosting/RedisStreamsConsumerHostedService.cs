@@ -71,6 +71,14 @@ public sealed class RedisStreamsConsumerHostedService(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to start consumer for queue '{Queue}'", registration.Options.QueueName);
+
+                // Dispose already-created consumers before propagating
+                foreach (var started in _consumers)
+                {
+                    await started.DisposeAsync();
+                }
+                _consumers.Clear();
+
                 throw;
             }
         }
@@ -113,16 +121,11 @@ public sealed class RedisStreamsConsumerHostedService(
         IHandlerInvokerRegistry handlerInvokerRegistry,
         IReadOnlySet<Type>? handlerTypeFilter = null)
     {
-        // Resolve middlewares from a temporary scope to avoid root-provider scope validation errors.
-        // IdempotencyMiddleware is scoped (depends on IInboxRepository) — we exclude it here
-        // and handle its context.Data population in the terminal handler instead.
-        List<IConsumeMiddleware> middlewares;
-        using (var scope = serviceProvider.CreateScope())
-        {
-            middlewares = scope.ServiceProvider.GetServices<IConsumeMiddleware>()
-                .Where(m => m is not IdempotencyMiddleware)
-                .ToList();
-        }
+        // All consume middlewares (except IdempotencyMiddleware) are registered as Singleton.
+        // Resolve from root provider directly — no scope needed.
+        var middlewares = serviceProvider.GetServices<IConsumeMiddleware>()
+            .Where(m => m is not IdempotencyMiddleware)
+            .ToList();
 
         // Build pipeline once — all remaining middlewares are singletons
         var pipeline = ConsumePipeline.Build(

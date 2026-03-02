@@ -41,16 +41,6 @@ public sealed class MessageTypeInfo
     public Type MessageType { get; init; } = null!;
 
     /// <summary>
-    /// Whether this is a command type.
-    /// </summary>
-    public bool IsCommand { get; init; }
-
-    /// <summary>
-    /// Whether this is an event type.
-    /// </summary>
-    public bool IsEvent { get; init; }
-
-    /// <summary>
     /// Custom attributes applied to the message type.
     /// </summary>
     public IReadOnlyCollection<Attribute> Attributes { get; init; } = Array.Empty<Attribute>();
@@ -107,15 +97,6 @@ public sealed class HandlerTopologyInfo
     /// </summary>
     public ConsumerQueueInfo? ConsumerQueueConfig { get; init; }
 
-    /// <summary>
-    /// Whether this is a command type.
-    /// </summary>
-    public bool IsCommand { get; init; }
-
-    /// <summary>
-    /// Whether this is an event type.
-    /// </summary>
-    public bool IsEvent { get; init; }
 }
 
 /// <summary>
@@ -123,36 +104,6 @@ public sealed class HandlerTopologyInfo
 /// </summary>
 public sealed class ConsumerQueueInfo
 {
-    /// <summary>
-    /// Whether the queue is durable.
-    /// </summary>
-    public bool Durable { get; init; } = true;
-
-    /// <summary>
-    /// Whether the queue is exclusive.
-    /// </summary>
-    public bool Exclusive { get; init; }
-
-    /// <summary>
-    /// Whether the queue should automatically delete itself when no longer in use.
-    /// </summary>
-    public bool AutoDelete { get; init; }
-
-    /// <summary>
-    /// The time-to-live for messages in the queue, in milliseconds.
-    /// </summary>
-    public int? MessageTtlMs { get; init; }
-
-    /// <summary>
-    /// The maximum number of messages that can be stored in the queue.
-    /// </summary>
-    public int? MaxLength { get; init; }
-
-    /// <summary>
-    /// The maximum number of bytes that can be stored in the queue.
-    /// </summary>
-    public long? MaxLengthBytes { get; init; }
-
     /// <summary>
     /// The type of the queue.
     /// </summary>

@@ -7,7 +7,7 @@ namespace Donakunn.MessagingOverQueue.RedisStreams;
 /// <summary>
 /// Hosted service that manages Redis connection lifecycle.
 /// </summary>
-internal sealed class RedisStreamsHostedService : IHostedService
+internal sealed class RedisStreamsHostedService : IHostedService, IAsyncDisposable
 {
     private readonly IRedisConnectionPool _connectionPool;
     private readonly ILogger<RedisStreamsHostedService> _logger;
@@ -40,5 +40,10 @@ internal sealed class RedisStreamsHostedService : IHostedService
     {
         _logger.LogInformation("Stopping Redis Streams hosted service");
         return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _connectionPool.DisposeAsync();
     }
 }

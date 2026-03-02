@@ -14,6 +14,7 @@ public class DeserializationMiddleware : IOrderedConsumeMiddleware
     private readonly IMessageTypeResolver _typeResolver;
     private readonly ILogger<DeserializationMiddleware> _logger;
     private readonly ConcurrentDictionary<string, Type?> _resolvedTypeCache = new();
+    private const int MaxTypeCacheSize = 1024;
 
     public DeserializationMiddleware(
         IMessageSerializer serializer,
@@ -34,7 +35,7 @@ public class DeserializationMiddleware : IOrderedConsumeMiddleware
         try
         {
             // Try to get message type from headers first, then fall back to context.Data
-            // (Redis Streams stores it in Data, RabbitMQ uses Headers)
+            // (Redis Streams stores it in Data, other providers may use Headers)
             var messageTypeName = context.Headers.TryGetValue("message-type", out var typeHeader)
                 ? typeHeader?.ToString()
                 : null;
@@ -53,9 +54,19 @@ public class DeserializationMiddleware : IOrderedConsumeMiddleware
                 return;
             }
 
-            var messageType = _resolvedTypeCache.GetOrAdd(
-                messageTypeName,
-                typeName => _typeResolver.ResolveType(typeName));
+            Type? messageType;
+            if (_resolvedTypeCache.TryGetValue(messageTypeName, out messageType))
+            {
+                // Cache hit
+            }
+            else
+            {
+                messageType = _typeResolver.ResolveType(messageTypeName);
+                if (_resolvedTypeCache.Count < MaxTypeCacheSize)
+                {
+                    _resolvedTypeCache.TryAdd(messageTypeName, messageType);
+                }
+            }
 
             if (messageType == null)
             {

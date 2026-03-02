@@ -65,14 +65,6 @@ namespace MessagingOverQueue.Test.Unit.Topology
         }
 
         [Fact]
-        public void GetConsumerNames_ConsumerVersionOverridesEventVersion()
-        {
-            // Event is v1, consumer says v2 → subscribes to v2 stream
-            var names = _sut.GetConsumerNames(typeof(HandlerWithV2), typeof(EventWithVersion));
-            Assert.Equal("topology.order-created.v2", names.StreamKey);
-        }
-
-        [Fact]
         public void GetConsumerNames_NoConsumerVersion_FallsBackToEventVersion()
         {
             var names = _sut.GetConsumerNames(typeof(PlainHandler), typeof(EventWithVersion));
@@ -85,6 +77,23 @@ namespace MessagingOverQueue.Test.Unit.Topology
             // [ConsumerTopology(Category)] only affects consumer group, not stream key category
             var names = _sut.GetConsumerNames(typeof(HandlerWithCategory), typeof(EventWithAllFields));
             Assert.StartsWith("orders.", names.StreamKey);
+        }
+
+        [Fact]
+        public void GetConsumerNames_ConsumerVersionOverride_UsesConsumerVersionInStreamKey()
+        {
+            // EventWithAllFields has [EventTopology(Version = "v2")]
+            // HandlerWithVersionOverride has [ConsumerTopology(Version = "v1")]
+            var names = _sut.GetConsumerNames(typeof(HandlerWithVersionOverride), typeof(EventWithAllFields));
+            Assert.Equal("orders.order-created.v1", names.StreamKey);
+        }
+
+        [Fact]
+        public void GetConsumerNames_ConsumerVersionNoEventVersion_UsesConsumerVersion()
+        {
+            // PlainEvent has no version, HandlerWithVersionNoEventVersion has [ConsumerTopology(Version = "v3")]
+            var names = _sut.GetConsumerNames(typeof(HandlerWithVersionNoEventVersion), typeof(PlainEvent));
+            Assert.Contains(".v3", names.StreamKey);
         }
 
         // ── GetConsumerNames — consumer group ─────────────────────────────
@@ -123,12 +132,33 @@ namespace MessagingOverQueue.Test.Unit.Topology
         }
 
         [Fact]
+        public void GetConsumerNames_EventVersion_AppearsInConsumerGroupName()
+        {
+            var names = _sut.GetConsumerNames(typeof(PlainHandler), typeof(EventWithVersion));
+            Assert.EndsWith(".v1", names.ConsumerGroupName);
+        }
+
+        [Fact]
+        public void GetConsumerNames_ConsumerVersionOverride_AppearsInConsumerGroupName()
+        {
+            var names = _sut.GetConsumerNames(typeof(HandlerWithVersionOverride), typeof(EventWithAllFields));
+            Assert.EndsWith(".v1", names.ConsumerGroupName);
+        }
+
+        [Fact]
+        public void GetConsumerNames_NoVersion_NoVersionInConsumerGroupName()
+        {
+            var names = _sut.GetConsumerNames(typeof(PlainHandler), typeof(PlainEvent));
+            Assert.DoesNotContain(".v", names.ConsumerGroupName);
+        }
+
+        [Fact]
         public void GetConsumerNames_AllConsumerFields_FullOverride()
         {
             var sut = new DefaultTopologyNamingConvention(
                 new TopologyNamingOptions { ServiceName = "default-service" });
             var names = sut.GetConsumerNames(typeof(HandlerWithAllConsumerFields), typeof(EventWithAllFields));
-            Assert.Equal("billing.custom-handler", names.ConsumerGroupName);
+            Assert.Equal("billing.custom-handler.v2", names.ConsumerGroupName);
         }
 
         [Fact]
@@ -151,7 +181,7 @@ namespace MessagingOverQueue.Test.Unit.Topology
 
         // ── Test types ─────────────────────────────────────────────────────
 
-        internal class PlainEvent : IEvent
+        internal class PlainEvent : IMessage
         {
             public Guid Id { get; } = Guid.NewGuid();
             public DateTime Timestamp { get; } = DateTime.UtcNow;
@@ -161,7 +191,7 @@ namespace MessagingOverQueue.Test.Unit.Topology
         }
 
         [EventTopology(Name = "order-created")]
-        private class EventWithName : IEvent
+        private class EventWithName : IMessage
         {
             public Guid Id { get; } = Guid.NewGuid();
             public DateTime Timestamp { get; } = DateTime.UtcNow;
@@ -171,7 +201,7 @@ namespace MessagingOverQueue.Test.Unit.Topology
         }
 
         [EventTopology(Name = "order-created", Version = "v1")]
-        private class EventWithVersion : IEvent
+        private class EventWithVersion : IMessage
         {
             public Guid Id { get; } = Guid.NewGuid();
             public DateTime Timestamp { get; } = DateTime.UtcNow;
@@ -181,7 +211,7 @@ namespace MessagingOverQueue.Test.Unit.Topology
         }
 
         [EventTopology(Category = "orders", Name = "order-created", Version = "v2")]
-        private class EventWithAllFields : IEvent
+        private class EventWithAllFields : IMessage
         {
             public Guid Id { get; } = Guid.NewGuid();
             public DateTime Timestamp { get; } = DateTime.UtcNow;
@@ -191,7 +221,7 @@ namespace MessagingOverQueue.Test.Unit.Topology
         }
 
         [EventTopology(Category = "orders")]
-        private class EventWithCategory : IEvent
+        private class EventWithCategory : IMessage
         {
             public Guid Id { get; } = Guid.NewGuid();
             public DateTime Timestamp { get; } = DateTime.UtcNow;
@@ -203,12 +233,6 @@ namespace MessagingOverQueue.Test.Unit.Topology
         private class PlainHandler : IMessageHandler<PlainEvent>
         {
             public Task HandleAsync(PlainEvent m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
-        }
-
-        [ConsumerTopology(Version = "v2")]
-        private class HandlerWithV2 : IMessageHandler<EventWithVersion>
-        {
-            public Task HandleAsync(EventWithVersion m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
         }
 
         [ConsumerTopology(Category = "payments")]
@@ -227,6 +251,18 @@ namespace MessagingOverQueue.Test.Unit.Topology
         private class HandlerWithAllConsumerFields : IMessageHandler<EventWithAllFields>
         {
             public Task HandleAsync(EventWithAllFields m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
+        }
+
+        [ConsumerTopology(Version = "v1")]
+        private class HandlerWithVersionOverride : IMessageHandler<EventWithAllFields>
+        {
+            public Task HandleAsync(EventWithAllFields m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
+        }
+
+        [ConsumerTopology(Version = "v3")]
+        private class HandlerWithVersionNoEventVersion : IMessageHandler<PlainEvent>
+        {
+            public Task HandleAsync(PlainEvent m, IMessageContext ctx, CancellationToken ct) => Task.CompletedTask;
         }
     }
 

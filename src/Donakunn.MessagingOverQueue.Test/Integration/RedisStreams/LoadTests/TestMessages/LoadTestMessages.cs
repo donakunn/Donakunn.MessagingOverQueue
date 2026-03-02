@@ -14,7 +14,7 @@ namespace MessagingOverQueue.Test.Integration.RedisStreams.LoadTests.TestMessage
 /// Event type for load testing with timing instrumentation.
 /// </summary>
 [EventTopology(Category = "test-service")]
-public record LoadTestEvent : Event
+public record LoadTestEvent : MessageBase
 {
     /// <summary>
     /// Sequence number for ordering verification.
@@ -41,7 +41,7 @@ public record LoadTestEvent : Event
 /// <summary>
 /// Event for stress testing with configurable processing delay.
 /// </summary>
-public record SlowLoadTestEvent : Event
+public record SlowLoadTestEvent : MessageBase
 {
     /// <summary>
     /// Sequence number for ordering verification.
@@ -63,7 +63,7 @@ public record SlowLoadTestEvent : Event
 /// Event for testing failure injection and resilience features under load.
 /// Supports configurable failure patterns for retry, circuit breaker, and timeout testing.
 /// </summary>
-public record FailingLoadTestEvent : Event
+public record FailingLoadTestEvent : MessageBase
 {
     /// <summary>
     /// Sequence number for ordering verification.

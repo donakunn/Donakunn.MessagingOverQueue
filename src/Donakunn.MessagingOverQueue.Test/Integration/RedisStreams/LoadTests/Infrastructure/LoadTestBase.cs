@@ -26,6 +26,8 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
     private readonly ITestOutputHelper _output;
     private Task? _periodicReportingTask;
     private MsSqlContainer? _sqlContainer;
+    private int _gcGen0Start, _gcGen1Start, _gcGen2Start;
+    private long _memoryStart;
 
     /// <summary>
     /// SQL Server connection string (available when persistence features are enabled).
@@ -137,7 +139,7 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
     /// <summary>
     /// Performs warmup by publishing and consuming a small number of messages.
     /// </summary>
-    protected async Task WarmupAsync<THandler>(IEventPublisher publisher, int count = 0)
+    protected async Task WarmupAsync<THandler>(IMessagePublisher publisher, int count = 0)
         where THandler : class
     {
         count = count > 0 ? count : Config.WarmupMessageCount;
@@ -208,7 +210,7 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
     /// Publishes messages at a controlled rate.
     /// </summary>
     protected async Task PublishAtRateAsync(
-        IEventPublisher publisher,
+        IMessagePublisher publisher,
         int targetRps,
         TimeSpan duration,
         Func<long, LoadTestEvent>? messageFactory = null)
@@ -249,7 +251,7 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
     /// Better for latency testing where consistent timing is important.
     /// </summary>
     protected async Task PublishAtPreciseRateAsync(
-        IEventPublisher publisher,
+        IMessagePublisher publisher,
         int targetRps,
         TimeSpan duration)
     {
@@ -288,6 +290,31 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
             }
         }
     }
+
+    #region Resource Tracking
+
+    protected void StartResourceTracking()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        _gcGen0Start = GC.CollectionCount(0);
+        _gcGen1Start = GC.CollectionCount(1);
+        _gcGen2Start = GC.CollectionCount(2);
+        _memoryStart = GC.GetTotalMemory(false);
+    }
+
+    protected ResourceMetrics StopResourceTracking()
+    {
+        return new ResourceMetrics
+        {
+            Gen0Collections = GC.CollectionCount(0) - _gcGen0Start,
+            Gen1Collections = GC.CollectionCount(1) - _gcGen1Start,
+            Gen2Collections = GC.CollectionCount(2) - _gcGen2Start,
+            MemoryDeltaBytes = GC.GetTotalMemory(false) - _memoryStart
+        };
+    }
+
+    #endregion
 
     #region SQL Server Container Management
 
@@ -473,6 +500,17 @@ public abstract class LoadTestBase : RedisStreamsIntegrationTestBase
     }
 
     #endregion
+}
+
+/// <summary>
+/// Resource metrics captured during a load test run.
+/// </summary>
+public record ResourceMetrics
+{
+    public int Gen0Collections { get; init; }
+    public int Gen1Collections { get; init; }
+    public int Gen2Collections { get; init; }
+    public long MemoryDeltaBytes { get; init; }
 }
 
 /// <summary>

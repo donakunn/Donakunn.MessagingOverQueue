@@ -6,7 +6,9 @@ using Donakunn.MessagingOverQueue.Providers;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 using System.Text.Json;
+using Donakunn.MessagingOverQueue.Diagnostics;
 
 namespace Donakunn.MessagingOverQueue.Persistence;
 
@@ -203,9 +205,26 @@ public sealed class OutboxProcessor : BackgroundService
             return;
 
         // Publish batch - returns individual results for partial success
-        var publishResults = await _internalPublisher.PublishBatchAsync(
-            contexts.Select(c => c.Context).ToList(),
-            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<PublishResult> publishResults;
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            publishResults = await _internalPublisher.PublishBatchAsync(
+                contexts.Select(c => c.Context).ToList(),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Let cancellation propagate
+        }
+        catch (Exception ex)
+        {
+            // Entire batch failed — mark all as failed with retry
+            _logger.LogError(ex, "PublishBatchAsync failed for {Count} messages", contexts.Count);
+            var allFailed = contexts.Select(c => (c.Id, ex.Message)).ToList();
+            await _repository.MarkAsFailedBatchAsync(allFailed, cancellationToken).ConfigureAwait(false);
+            return;
+        }
 
         // Map results back to message IDs
         var succeeded = new List<Guid>(contexts.Count);
@@ -227,6 +246,13 @@ public sealed class OutboxProcessor : BackgroundService
                 _logger.LogError("Failed to publish outbox message {MessageId}: {Error}", messageId, result.Error);
             }
         }
+
+        sw.Stop();
+        MessagingMetrics.OutboxBatchDuration.Record(sw.Elapsed.TotalMilliseconds);
+        MessagingMetrics.OutboxMessagesPublished.Add(succeeded.Count);
+        MessagingMetrics.OutboxMessagesFailed.Add(failed.Count);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Batch update statuses in parallel
         var updateTasks = new List<Task>(2);

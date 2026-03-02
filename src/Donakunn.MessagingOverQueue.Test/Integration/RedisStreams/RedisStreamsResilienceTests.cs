@@ -107,7 +107,7 @@ public class RedisStreamsResilienceTests : RedisStreamsIntegrationTestBase
         using var host = await BuildHostWithResilience(resilience => resilience
             .WithRetry(opts => opts.MaxRetryAttempts = 3));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Retry Test" });
@@ -158,7 +158,7 @@ public class RedisStreamsResilienceTests : RedisStreamsIntegrationTestBase
             .WithRetry(opts => opts.MaxRetryAttempts = 3)
             .WithTimeout(TimeSpan.FromSeconds(30)));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         const int messageCount = 20;
 
         // Act

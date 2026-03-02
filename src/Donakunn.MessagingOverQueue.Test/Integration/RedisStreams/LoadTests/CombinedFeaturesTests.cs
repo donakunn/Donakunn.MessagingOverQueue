@@ -63,7 +63,7 @@ public class CombinedFeaturesTests : LoadTestBase
         Assert.True(retry!.Order < timeout!.Order, "Retry should be before Timeout");
 
         // Run a load test to verify it works under load
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         LoadTestEventHandler.SetMetricsCollector(Metrics);
 
         var targetRps = 100;
@@ -98,7 +98,7 @@ public class CombinedFeaturesTests : LoadTestBase
             retryInitialDelay: TimeSpan.FromMilliseconds(100));
 
         using var host = await BuildHostWithFeatures<FailingLoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing outbox + retry under failures");
 
@@ -154,7 +154,7 @@ public class CombinedFeaturesTests : LoadTestBase
             circuitBreakerDuration: TimeSpan.FromSeconds(5));
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing idempotency + circuit breaker");
 
@@ -199,7 +199,7 @@ public class CombinedFeaturesTests : LoadTestBase
             timeoutDuration: TimeSpan.FromSeconds(30));
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Extended stress test with all features");
         Reporter.WriteLine($"Features: {features}");
@@ -253,7 +253,7 @@ public class CombinedFeaturesTests : LoadTestBase
             timeout: timeout);
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing feature combination: {features}");
 
@@ -303,7 +303,7 @@ public class CombinedFeaturesTests : LoadTestBase
             Metrics.Reset();
 
             using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-            var publisher = host.Services.GetRequiredService<IEventPublisher>();
+            var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
             LoadTestEventHandler.SetMetricsCollector(Metrics);
 

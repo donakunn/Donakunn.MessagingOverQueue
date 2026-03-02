@@ -25,7 +25,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SimpleTestEvent { Value = "ACK test" });
@@ -53,7 +53,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
                 claimIdleTime: TimeSpan.FromMinutes(10),
                 checkInterval: TimeSpan.FromMinutes(10)));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new FailingEvent { ShouldFail = true });
@@ -75,7 +75,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         const int messageCount = 5;
 
         // Act
@@ -101,7 +101,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Publish and process
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Once" });
@@ -128,7 +128,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         using var host = await BuildHost<SlowProcessingEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 1));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SlowProcessingEvent 
@@ -158,7 +158,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         using var host = await BuildHost<SimpleTestEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 10));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
         const int messageCount = 20;
 
         // Act - Publish concurrently
@@ -192,7 +192,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
                     claimIdleTime: TimeSpan.FromMinutes(10),
                     checkInterval: TimeSpan.FromMinutes(10)));
 
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Publish messages that will have mixed results
         await publisher.PublishAsync(new MixedSuccessEvent { ShouldSucceed = true, Value = "Success-1" });
@@ -221,7 +221,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         // Arrange
         SimpleTestEventHandler.Reset();
         using var host = await BuildHost<SimpleTestEventHandler>();
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         // Act
         await publisher.PublishAsync(new SimpleTestEvent { Value = "Info test" });
@@ -251,7 +251,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         using (var host = await BuildHost<SlowProcessingEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 1)))
         {
-            var publisher = host.Services.GetRequiredService<IEventPublisher>();
+            var publisher = host.Services.GetRequiredService<IMessagePublisher>();
             
             // Publish slow message
             await publisher.PublishAsync(new SlowProcessingEvent 
@@ -285,7 +285,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
         using var consumer1 = await BuildHost<SimpleTestEventHandler>();
         using var consumer2 = await BuildHost<SimpleTestEventHandler>();
 
-        var publisher = consumer1.Services.GetRequiredService<IEventPublisher>();
+        var publisher = consumer1.Services.GetRequiredService<IMessagePublisher>();
         const int messageCount = 10;
 
         // Act
@@ -311,7 +311,7 @@ public class RedisStreamsAcknowledgementTests : RedisStreamsIntegrationTestBase
 /// <summary>
 /// Event that can succeed or fail based on property.
 /// </summary>
-public record MixedSuccessEvent : Event
+public record MixedSuccessEvent : MessageBase
 {
     public bool ShouldSucceed { get; set; }
     public string Value { get; set; } = string.Empty;

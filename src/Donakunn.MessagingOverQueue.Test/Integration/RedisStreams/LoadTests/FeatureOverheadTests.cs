@@ -31,7 +31,7 @@ public class FeatureOverheadTests : LoadTestBase
         var features = FeatureConfiguration.None;
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing baseline performance (no features)");
         Reporter.WriteLine($"Target RPS: {Config.ThroughputTargetMessagesPerSecond}");
@@ -70,7 +70,7 @@ public class FeatureOverheadTests : LoadTestBase
         var features = CreateFeatures(retry: true, retryMaxAttempts: 3);
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing retry middleware overhead");
         Reporter.WriteLine($"Configuration: MaxAttempts={features.RetryMaxAttempts}");
@@ -108,7 +108,7 @@ public class FeatureOverheadTests : LoadTestBase
         var features = CreateFeatures(circuitBreaker: true, circuitBreakerThreshold: 10);
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing circuit breaker overhead (healthy state)");
         Reporter.WriteLine($"Configuration: FailureThreshold={features.CircuitBreakerFailureThreshold}");
@@ -146,7 +146,7 @@ public class FeatureOverheadTests : LoadTestBase
         var features = CreateFeatures(timeout: true, timeoutDuration: TimeSpan.FromSeconds(30));
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing timeout middleware overhead");
         Reporter.WriteLine($"Configuration: Timeout={features.TimeoutDuration.TotalSeconds}s");
@@ -184,7 +184,7 @@ public class FeatureOverheadTests : LoadTestBase
         var features = CreateFeatures(idempotency: true);
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing idempotency middleware overhead");
         Reporter.WriteLine($"Configuration: RetentionPeriod={features.IdempotencyRetentionPeriod.TotalDays} days");
@@ -226,7 +226,7 @@ public class FeatureOverheadTests : LoadTestBase
             outboxProcessingInterval: TimeSpan.FromMilliseconds(100));
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing outbox pattern overhead");
         Reporter.WriteLine($"Configuration: BatchSize={features.OutboxBatchSize}, Interval={features.OutboxProcessingInterval.TotalMilliseconds}ms");
@@ -275,7 +275,7 @@ public class FeatureOverheadTests : LoadTestBase
             timeoutDuration: TimeSpan.FromSeconds(30));
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing all features combined overhead");
         Reporter.WriteLine($"Features: {features}");
@@ -317,7 +317,7 @@ public class FeatureOverheadTests : LoadTestBase
         var features = CreateFeatures(idempotency: true);
 
         using var host = await BuildHostWithFeatures<LoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing idempotency latency at {targetRps} RPS");
 

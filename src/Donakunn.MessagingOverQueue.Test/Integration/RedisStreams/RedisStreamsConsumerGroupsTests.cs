@@ -48,7 +48,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
         using var consumer1 = await BuildHost<SimpleTestEventHandler>();
         using var consumer2 = await BuildHost<SimpleTestEventHandler>();
 
-        var publisher = consumer1.Services.GetRequiredService<IEventPublisher>();
+        var publisher = consumer1.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Publish messages
         for (int i = 0; i < messageCount; i++)
@@ -113,7 +113,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
             .AddRedisStreamsConsumerHostedService();
         });
 
-        var publisher = host1.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host1.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Both services publish to and consume from the SAME shared stream
         for (int i = 0; i < messageCount; i++)
@@ -147,7 +147,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
 
         // Start with one consumer
         using var consumer1 = await BuildHost<SimpleTestEventHandler>();
-        var publisher = consumer1.Services.GetRequiredService<IEventPublisher>();
+        var publisher = consumer1.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Publish initial batch
         for (int i = 0; i < initialMessages; i++)
@@ -193,8 +193,8 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
         using var slowHost = await BuildHost<SlowProcessingEventHandler>(options =>
             options.ConfigureConsumer(batchSize: 1)); // Slow, sequential
 
-        var fastPublisher = fastHost.Services.GetRequiredService<IEventPublisher>();
-        var slowPublisher = slowHost.Services.GetRequiredService<IEventPublisher>();
+        var fastPublisher = fastHost.Services.GetRequiredService<IMessagePublisher>();
+        var slowPublisher = slowHost.Services.GetRequiredService<IMessagePublisher>();
 
         const int messageCount = 5;
 
@@ -237,7 +237,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
         // Phase 1: Start consumer, process messages, stop
         using (var host1 = await BuildHost<SimpleTestEventHandler>())
         {
-            var publisher = host1.Services.GetRequiredService<IEventPublisher>();
+            var publisher = host1.Services.GetRequiredService<IMessagePublisher>();
 
             for (int i = 0; i < messagesBeforeRestart; i++)
             {
@@ -253,7 +253,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
 
         // Phase 2: Restart consumer with same group
         using var host2 = await BuildHost<SimpleTestEventHandler>();
-        var publisher2 = host2.Services.GetRequiredService<IEventPublisher>();
+        var publisher2 = host2.Services.GetRequiredService<IMessagePublisher>();
 
         // Publish more messages
         for (int i = 0; i < messagesAfterRestart; i++)
@@ -288,7 +288,7 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
         using var consumer2 = await BuildHost<SimpleTestEventHandler>();
         using var consumer3 = await BuildHost<SimpleTestEventHandler>();
 
-        var publisher = consumer1.Services.GetRequiredService<IEventPublisher>();
+        var publisher = consumer1.Services.GetRequiredService<IMessagePublisher>();
 
         // Act - Rapid publishing
         var publishTasks = Enumerable.Range(0, messageCount)
@@ -341,8 +341,8 @@ public class RedisStreamsConsumerGroupsTests : RedisStreamsIntegrationTestBase
         SimpleTestEventHandler.Reset();
 
         // Publish to both services
-        var publisher1 = service1Host.Services.GetRequiredService<IEventPublisher>();
-        var publisher2 = service2Host.Services.GetRequiredService<IEventPublisher>();
+        var publisher1 = service1Host.Services.GetRequiredService<IMessagePublisher>();
+        var publisher2 = service2Host.Services.GetRequiredService<IMessagePublisher>();
 
         const int messageCount = 3;
 

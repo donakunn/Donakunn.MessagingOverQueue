@@ -35,7 +35,7 @@ public class ResilienceUnderLoadTests : LoadTestBase
             outbox: true, idempotency: true, circuitBreaker: true);
 
         using var host = await BuildHostWithFeatures<FailingLoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing retry with transient failures");
         Reporter.WriteLine($"Configuration: MaxAttempts={features.RetryMaxAttempts}");
@@ -97,7 +97,7 @@ public class ResilienceUnderLoadTests : LoadTestBase
             circuitBreakerDuration: TimeSpan.FromSeconds(10));
 
         using var host = await BuildHostWithFeatures<FailingLoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing circuit breaker opens under failures");
         Reporter.WriteLine($"Configuration: Threshold={features.CircuitBreakerFailureThreshold}");
@@ -149,7 +149,7 @@ public class ResilienceUnderLoadTests : LoadTestBase
             circuitBreakerDuration: TimeSpan.FromSeconds(5));
 
         using var host = await BuildHostWithFeatures<FailingLoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing circuit breaker recovery");
 
@@ -215,7 +215,7 @@ public class ResilienceUnderLoadTests : LoadTestBase
             timeoutDuration: timeoutDuration);
 
         using var host = await BuildHostWithFeatures<FailingLoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing timeout handling");
         Reporter.WriteLine($"Configuration: Timeout={timeoutDuration.TotalMilliseconds}ms");
@@ -281,7 +281,7 @@ public class ResilienceUnderLoadTests : LoadTestBase
             timeoutDuration: TimeSpan.FromSeconds(2));
 
         using var host = await BuildHostWithFeatures<FailingLoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing combined resilience under chaos");
         Reporter.WriteLine($"Features: {features}");
@@ -379,7 +379,7 @@ public class ResilienceUnderLoadTests : LoadTestBase
             retryInitialDelay: TimeSpan.FromMilliseconds(50));
 
         using var host = await BuildHostWithFeatures<FailingLoadTestEventHandler>(features);
-        var publisher = host.Services.GetRequiredService<IEventPublisher>();
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
         Reporter.WriteLine($"Testing retry exhaustion");
         Reporter.WriteLine($"Configuration: MaxAttempts={features.RetryMaxAttempts}");

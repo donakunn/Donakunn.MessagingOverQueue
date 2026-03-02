@@ -8,7 +8,7 @@ namespace Donakunn.MessagingOverQueue.Topology.Conventions;
 /// <summary>
 /// Default Redis-Streams-native naming convention.
 /// Stream key = {category}.{name}[.{version}]
-/// Consumer group = {service}.{name}
+/// Consumer group = {service}.{name}[.{version}]
 /// </summary>
 public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOptions options)
     : ITopologyNamingConvention
@@ -58,7 +58,11 @@ public sealed partial class DefaultTopologyNamingConvention(TopologyNamingOption
             ?? _options.ServiceName
             ?? GetServiceNameFromHandler(handlerType));
 
-        return new ConsumerTopologyNames(streamKey, $"{serviceName}.{groupName}");
+        var consumerGroupName = version is null
+            ? $"{serviceName}.{groupName}"
+            : $"{serviceName}.{groupName}.{version}";
+
+        return new ConsumerTopologyNames(streamKey, consumerGroupName);
     }
 
     /// <inheritdoc />

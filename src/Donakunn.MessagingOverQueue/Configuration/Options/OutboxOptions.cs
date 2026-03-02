@@ -73,5 +73,10 @@ public class OutboxOptions
     /// Should be >= WorkerCount for optimal distribution.
     /// </summary>
     public int PartitionCount { get; set; } = 4;
+
+    /// <summary>
+    /// Maximum allowed delay for scheduled messages. Defaults to 365 days.
+    /// </summary>
+    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromDays(365);
 }
 

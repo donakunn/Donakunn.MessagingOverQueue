@@ -65,6 +65,9 @@ coverage*/
 *.coverage
 *.coveragexml
 
+# Worktrees
+.worktrees/
+
 # Other
 node_modules/
 

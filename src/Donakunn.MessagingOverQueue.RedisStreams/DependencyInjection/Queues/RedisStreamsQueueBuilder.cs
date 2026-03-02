@@ -98,9 +98,6 @@ internal sealed class RedisStreamsQueueBuilder : IRedisStreamsQueueBuilder
         // Core connection services
         Services.TryAddSingleton<IRedisConnectionPool, RedisConnectionPool>();
 
-        // Register messaging provider abstraction for Redis Streams
-        Services.TryAddSingleton<IMessagingProvider, RedisStreamsMessagingProvider>();
-
         // Redis Streams specific services
         Services.TryAddSingleton<RedisStreamsPublisher>();
         Services.TryAddSingleton<IInternalPublisher>(sp => sp.GetRequiredService<RedisStreamsPublisher>());
@@ -115,12 +112,6 @@ internal sealed class RedisStreamsQueueBuilder : IRedisStreamsQueueBuilder
                 sp.GetRequiredService<RedisStreamsPublisher>(),
                 sp.GetServices<IPublishMiddleware>(),
                 sp.GetRequiredService<IMessageRoutingResolver>()));
-
-        Services.TryAddSingleton<IEventPublisher>(sp =>
-            (IEventPublisher)sp.GetRequiredService<IMessagePublisher>());
-
-        Services.TryAddSingleton<ICommandSender>(sp =>
-            (ICommandSender)sp.GetRequiredService<IMessagePublisher>());
 
         // Serialization services (shared with core)
         Services.TryAddSingleton<IMessageSerializer, JsonMessageSerializer>();

@@ -40,7 +40,7 @@ Tests the complete message flow from publishing to consumption.
 public async Task Message_Published_And_Consumed_Successfully()
 {
     using var host = await BuildHost<SimpleTestEventHandler>();
-    var publisher = host.Services.GetRequiredService<IEventPublisher>();
+    var publisher = host.Services.GetRequiredService<IMessagePublisher>();
 
     await publisher.PublishAsync(new SimpleTestEvent { Value = "Hello Redis Streams" });
     await SimpleTestEventHandler.WaitForCountAsync(1, DefaultTimeout);
@@ -309,7 +309,7 @@ services.AddRedisStreamsMessaging(options =>
 
 These tests validate the provider-agnostic architecture:
 
-✅ **Core abstractions work unchanged** (`IEventPublisher`, `IMessageHandler<T>`)  
+✅ **Core abstractions work unchanged** (`IMessagePublisher`, `IMessageHandler<T>`)  
 ✅ **Middleware pipeline functions correctly** (Serialization, Logging, Idempotency)  
 ✅ **Topology auto-discovery works** (Handler scanning, convention-based naming)  
 ✅ **Provider-specific behavior correct** (Streams, Consumer Groups, PEL, DLQ)
